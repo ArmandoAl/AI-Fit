@@ -1,33 +1,102 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../../core/platform/app_image.dart';
 import 'package:flutter/foundation.dart';
-import '../../../core/services/firestore_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../core/platform/app_image.dart';
 import '../../../core/services/onboarding_gate_service.dart';
 import '../../../core/services/storage_service.dart';
+import '../../../core/services/supabase_client.dart';
 import '../services/user_identity_analysis_service.dart';
 
 class ProfileRepository {
-  final FirebaseFirestore _firestore = FirestoreService.instance;
   final StorageService _storageService = StorageService();
   final UserIdentityAnalysisService _identityAnalysisService =
       UserIdentityAnalysisService();
 
-  /// Get user profile data from Firestore
+  SupabaseClient get _supabase {
+    final client = AppSupabaseClient.client;
+    if (client != null) return client;
+    return Supabase.instance.client;
+  }
+
+  /// Get user profile data from Supabase
   Future<Map<String, dynamic>?> getUserProfile(String userId) async {
     try {
-      final doc = await _firestore.collection('users').doc(userId).get();
-      
-      if (doc.exists) {
-        return doc.data();
-      }
-      return null;
+      final profileRes = await _supabase
+          .from('profiles')
+          .select()
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (profileRes == null) return null;
+
+      final photosRes = await _supabase
+          .from('user_photos')
+          .select()
+          .eq('user_id', userId);
+
+      final photosList = (photosRes as List? ?? []);
+      final bodyPhotos = photosList
+          .where((p) => p['kind'] == 'body')
+          .map((p) => p['storage_path'].toString())
+          .toList();
+      final facePhotos = photosList
+          .where((p) => p['kind'] == 'face')
+          .map((p) => p['storage_path'].toString())
+          .toList();
+
+      return {
+        'id': profileRes['id'],
+        'displayName': profileRes['display_name'],
+        'avatarUrl': profileRes['avatar_path'],
+        'preferences': profileRes['preferences'] ?? {},
+        'onboardingCompleted': profileRes['onboarding_completed'] ?? false,
+        'identityProfile': profileRes['identity_profile'],
+        'identityVersion': profileRes['identity_version'],
+        'identityCollageUrl': profileRes['identity_collage_path'],
+        'baseImageUrl': profileRes['base_image_path'],
+        'bodyPhotos': bodyPhotos,
+        'facePhotos': facePhotos,
+      };
     } catch (e) {
-      debugPrint('Error getting user profile: $e');
-      throw Exception('Failed to get user profile: $e');
+      debugPrint('❌ [ProfileRepository -> Supabase] Error getting profile: $e');
+      return null;
     }
   }
 
-  /// Upload body photos and update Firestore
+  /// Garantiza defensivamente la existencia del registro en `public.profiles`.
+  /// Evita que inserciones en `public.user_photos` fallen por restricción FK (code: 23503).
+  Future<void> ensureProfileExists(String userId) async {
+    try {
+      final existing = await _supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (existing == null) {
+        debugPrint('⚠️ [ProfileRepository] Perfil no encontrado para $userId. Realizando upsert defensivo...');
+        await _supabase.from('profiles').upsert({
+          'id': userId,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }, onConflict: 'id');
+        debugPrint('✅ [ProfileRepository] Perfil defensivo confirmado para $userId');
+      }
+    } catch (e) {
+      debugPrint('⚠️ [ProfileRepository] Error verificando perfil ($e), forzando upsert defensivo...');
+      try {
+        await _supabase.from('profiles').upsert({
+          'id': userId,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }, onConflict: 'id');
+        debugPrint('✅ [ProfileRepository] Perfil forzado exitosamente para $userId');
+      } catch (upsertError) {
+        debugPrint('❌ [ProfileRepository] Fallo crítico al asegurar registro en profiles: $upsertError');
+        rethrow;
+      }
+    }
+  }
+
+  /// Upload body photos and update profile
   Future<void> uploadBodyPhotos({
     required String userId,
     required List<AppImage> photos,
@@ -35,7 +104,9 @@ class ProfileRepository {
     try {
       debugPrint('📸 Uploading ${photos.length} body photos...');
 
-      // Try to upload photos to Storage
+      // Salvaguarda FK: garantizar registro en public.profiles antes de subir fotos o insertar en user_photos
+      await ensureProfileExists(userId);
+
       List<String> urls = [];
       try {
         urls = await _storageService.uploadMultiplePhotos(
@@ -46,34 +117,20 @@ class ProfileRepository {
         debugPrint('✅ Photos uploaded to Storage');
       } catch (e) {
         debugPrint('⚠️ Storage upload failed (using mock URLs): $e');
-        // Use mock URLs for offline development
         urls = photos
             .map((f) => 'mock://body_photo_${f.storageKey}')
             .toList();
       }
 
-      // Try to update Firestore
-      try {
-        debugPrint('💾 Saving ${urls.length} body photo URLs to Firestore...');
-        debugPrint('   URLs: $urls');
-        
-        await _firestore.collection('users').doc(userId).set({
-          'bodyPhotos': FieldValue.arrayUnion(urls),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-        
-        debugPrint('✅ Firestore updated with body photos');
-        
-        // Verify the update
-        final doc = await _firestore.collection('users').doc(userId).get();
-        final savedPhotos = doc.data()?['bodyPhotos'] as List<dynamic>? ?? [];
-        debugPrint('✅ Verified: ${savedPhotos.length} body photos in Firestore');
-      } catch (e) {
-        debugPrint('❌ Firestore update failed: $e');
-        throw Exception('Failed to save body photos to Firestore: $e');
+      for (final url in urls) {
+        await _supabase.from('user_photos').upsert({
+          'user_id': userId,
+          'kind': 'body',
+          'storage_path': url,
+          'content_hash': 'hash_${url.hashCode}',
+        }, onConflict: 'user_id, kind, content_hash');
       }
-
-      debugPrint('✅ Body photos process completed');
+      debugPrint('✅ [ProfileRepository -> Supabase] Body photos saved');
 
       OnboardingGateService.invalidateCache();
       _refreshIdentityProfiles(userId);
@@ -83,7 +140,7 @@ class ProfileRepository {
     }
   }
 
-  /// Upload face photos and update Firestore
+  /// Upload face photos and update profile
   Future<void> uploadFacePhotos({
     required String userId,
     required List<AppImage> photos,
@@ -91,7 +148,9 @@ class ProfileRepository {
     try {
       debugPrint('📸 Uploading ${photos.length} face photos...');
 
-      // Try to upload photos to Storage
+      // Salvaguarda FK: garantizar registro en public.profiles antes de subir fotos o insertar en user_photos
+      await ensureProfileExists(userId);
+
       List<String> urls = [];
       try {
         urls = await _storageService.uploadMultiplePhotos(
@@ -102,34 +161,20 @@ class ProfileRepository {
         debugPrint('✅ Photos uploaded to Storage');
       } catch (e) {
         debugPrint('⚠️ Storage upload failed (using mock URLs): $e');
-        // Use mock URLs for offline development
         urls = photos
             .map((f) => 'mock://face_photo_${f.storageKey}')
             .toList();
       }
 
-      // Try to update Firestore
-      try {
-        debugPrint('💾 Saving ${urls.length} face photo URLs to Firestore...');
-        debugPrint('   URLs: $urls');
-        
-        await _firestore.collection('users').doc(userId).set({
-          'facePhotos': FieldValue.arrayUnion(urls),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-        
-        debugPrint('✅ Firestore updated with face photos');
-        
-        // Verify the update
-        final doc = await _firestore.collection('users').doc(userId).get();
-        final savedPhotos = doc.data()?['facePhotos'] as List<dynamic>? ?? [];
-        debugPrint('✅ Verified: ${savedPhotos.length} face photos in Firestore');
-      } catch (e) {
-        debugPrint('❌ Firestore update failed: $e');
-        throw Exception('Failed to save face photos to Firestore: $e');
+      for (final url in urls) {
+        await _supabase.from('user_photos').upsert({
+          'user_id': userId,
+          'kind': 'face',
+          'storage_path': url,
+          'content_hash': 'hash_${url.hashCode}',
+        }, onConflict: 'user_id, kind, content_hash');
       }
-
-      debugPrint('✅ Face photos process completed');
+      debugPrint('✅ [ProfileRepository -> Supabase] Face photos saved');
 
       OnboardingGateService.invalidateCache();
       _refreshIdentityProfiles(userId);
@@ -166,24 +211,21 @@ class ProfileRepository {
     });
   }
 
-  /// Remove a photo URL from Firestore and delete from Storage
+  /// Remove a photo URL from database and delete from Storage
   Future<void> removePhoto({
     required String userId,
     required String photoUrl,
-    required String photoType, // 'body' or 'face'
+    required String photoType,
   }) async {
     try {
-      // Delete from Storage
       await _storageService.deletePhoto(photoUrl);
 
-      // Remove from Firestore
-      final field = photoType == 'body' ? 'bodyPhotos' : 'facePhotos';
-      await _firestore.collection('users').doc(userId).set({
-        field: FieldValue.arrayRemove([photoUrl]),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      debugPrint('Photo removed successfully');
+      await _supabase
+          .from('user_photos')
+          .delete()
+          .eq('user_id', userId)
+          .eq('storage_path', photoUrl);
+      debugPrint('✅ [ProfileRepository -> Supabase] Photo removed');
     } catch (e) {
       debugPrint('Error removing photo: $e');
       throw Exception('Failed to remove photo: $e');
@@ -217,14 +259,12 @@ class ProfileRepository {
   /// Mark onboarding as completed
   Future<void> completeOnboarding(String userId) async {
     try {
-      await _firestore.collection('users').doc(userId).set({
-        'onboardingCompleted': true,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-      debugPrint('✅ Onboarding marked as completed');
+      await _supabase
+          .from('profiles')
+          .update({'onboarding_completed': true}).eq('id', userId);
+      debugPrint('✅ [ProfileRepository -> Supabase] Onboarding completed');
     } catch (e) {
-      debugPrint('⚠️ Onboarding completion skipped (offline mode): $e');
-      // Continue without Firestore - it's optional for now
+      debugPrint('⚠️ Onboarding completion skipped: $e');
     }
   }
 
@@ -234,11 +274,10 @@ class ProfileRepository {
     required Map<String, dynamic> preferences,
   }) async {
     try {
-      await _firestore.collection('users').doc(userId).set({
-        'preferences': preferences,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-      debugPrint('Preferences updated');
+      await _supabase
+          .from('profiles')
+          .update({'preferences': preferences}).eq('id', userId);
+      debugPrint('✅ [ProfileRepository -> Supabase] Preferences updated');
     } catch (e) {
       debugPrint('Error updating preferences: $e');
       throw Exception('Failed to update preferences: $e');
@@ -250,14 +289,11 @@ class ProfileRepository {
     try {
       debugPrint('🗑️ Deleting user account: $userId');
 
-      // 1. Get user profile to find all photo URLs
       final profileData = await getUserProfile(userId);
-      
-      // 2. Delete all photos from Storage
       if (profileData != null) {
         final bodyPhotos = profileData['bodyPhotos'] as List<dynamic>? ?? [];
         final facePhotos = profileData['facePhotos'] as List<dynamic>? ?? [];
-        
+
         final allPhotoUrls = [
           ...bodyPhotos.map((url) => url.toString()),
           ...facePhotos.map((url) => url.toString()),
@@ -268,28 +304,15 @@ class ProfileRepository {
             await _storageService.deletePhoto(url);
           } catch (e) {
             debugPrint('⚠️ Error deleting photo $url: $e');
-            // Continue with other deletions
           }
         }
       }
 
-      // 3. Delete user document from Firestore
-      await _firestore.collection('users').doc(userId).delete();
-      
-      // 4. Delete all wardrobe items (optional - you might want to keep them)
-      // For now, we'll delete them too
-      final wardrobeSnapshot = await _firestore
-          .collection('wardrobe_items')
-          .where('userId', isEqualTo: userId)
-          .get();
-      
-      final batch = _firestore.batch();
-      for (final doc in wardrobeSnapshot.docs) {
-        batch.delete(doc.reference);
-      }
-      await batch.commit();
+      await _supabase.from('wardrobe_items').delete().eq('user_id', userId);
+      await _supabase.from('user_photos').delete().eq('user_id', userId);
+      await _supabase.from('profiles').delete().eq('id', userId);
 
-      debugPrint('✅ User account deleted successfully');
+      debugPrint('✅ [ProfileRepository -> Supabase] User account and data deleted');
     } catch (e) {
       debugPrint('❌ Error deleting user account: $e');
       throw Exception('Failed to delete user account: $e');

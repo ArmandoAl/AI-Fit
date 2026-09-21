@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"name": "AI-Fit",
+			"path": "."
+		}
+	],
+	"settings": {
+		"dart.analysisExcludedFolders": [
+			"build",
+			"ios/build",
+			".dart_tool"
+		],
+		"files.watcherExclude": {
+			"**/build/**": true,
+			"**/ios/build/**": true
+		},
+		"dart.flutterSdkPath": ".fvm/versions/3.47.1"
+	}
+}

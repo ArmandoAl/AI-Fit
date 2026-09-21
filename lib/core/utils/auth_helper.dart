@@ -1,36 +1,33 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import '../services/supabase_client.dart';
 
 /// Helper class for authentication-related utilities
 /// 
-/// Provides centralized methods to get the current user's UID
-/// and validate authentication state.
+/// Provides centralized methods to get the current user's ID
+/// and validate authentication state with Supabase Auth.
 class AuthHelper {
-  static final FirebaseAuth _auth = FirebaseAuth.instance;
-
-  /// Get the current user's UID
+  /// Get the current user's ID
   /// 
   /// Returns null if no user is authenticated.
   /// Throws an exception if a mock user ID is detected.
   static String? getCurrentUserId() {
-    final user = _auth.currentUser;
+    final user = AppSupabaseClient.client?.auth.currentUser;
     if (user == null) {
       return null;
     }
 
-    final uid = user.uid;
+    final uid = user.id;
     
     // Validate that we're not using a mock ID
     if (uid.startsWith('mock_') || uid.contains('mock_user')) {
       debugPrint('❌ ERROR: Detected mock user ID: $uid');
-      debugPrint('   This should never happen with real Firebase Auth.');
       throw Exception('Invalid authentication state. Please log in with Google.');
     }
 
     return uid;
   }
 
-  /// Get the current user's UID, throwing if not authenticated
+  /// Get the current user's ID, throwing if not authenticated
   /// 
   /// Throws an exception if:
   /// - No user is authenticated
@@ -45,14 +42,14 @@ class AuthHelper {
 
   /// Check if a user is currently authenticated
   static bool isAuthenticated() {
-    return _auth.currentUser != null;
+    return AppSupabaseClient.client?.auth.currentUser != null;
   }
 
   /// Validate that a provided userId matches the current authenticated user
   /// 
   /// Throws an exception if:
   /// - No user is authenticated
-  /// - The provided userId doesn't match the current user's UID
+  /// - The provided userId doesn't match the current user's ID
   /// - A mock user ID is detected
   static void validateUserId(String userId) {
     final currentUid = requireCurrentUserId();

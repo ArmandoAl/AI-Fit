@@ -30,15 +30,9 @@ environment:
 dependencies:
   bloc: ^9.2.0
   cached_network_image: ^3.4.1
-  cloud_firestore: ^6.4.1
   cupertino_icons: ^1.0.8
   dio: ^5.9.0
   equatable: ^2.0.8
-  firebase_ai: ^3.12.1
-  firebase_auth: ^6.5.1
-  firebase_core: ^4.9.0
-  firebase_messaging: ^16.2.2
-  firebase_storage: ^13.4.1
   flutter:
     sdk: flutter
   flutter_web_plugins:
@@ -52,6 +46,7 @@ dependencies:
   image_picker: ^1.1.2
   path_provider: ^2.1.4
   shared_preferences: ^2.5.5
+  supabase_flutter: ^2.8.0
   uuid: ^4.5.2
 
 dev_dependencies:

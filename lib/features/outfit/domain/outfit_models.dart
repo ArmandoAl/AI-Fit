@@ -74,19 +74,33 @@ class FilteredWardrobe {
   final List<WardrobeItem> bottoms;
   final List<WardrobeItem> shoes;
   final List<WardrobeItem> outerwear;
+  final List<WardrobeItem> onePieces;
+  final List<WardrobeItem> accessories;
 
   FilteredWardrobe({
     required this.tops,
     required this.bottoms,
     required this.shoes,
     required this.outerwear,
+    this.onePieces = const [],
+    this.accessories = const [],
   });
 
   int get totalItems =>
-      tops.length + bottoms.length + shoes.length + outerwear.length;
+      tops.length +
+      bottoms.length +
+      shoes.length +
+      outerwear.length +
+      onePieces.length +
+      accessories.length;
 
   bool get isEmpty =>
-      tops.isEmpty && bottoms.isEmpty && shoes.isEmpty && outerwear.isEmpty;
+      tops.isEmpty &&
+      bottoms.isEmpty &&
+      shoes.isEmpty &&
+      outerwear.isEmpty &&
+      onePieces.isEmpty &&
+      accessories.isEmpty;
 }
 
 class GeneratedOutfit {
@@ -95,9 +109,12 @@ class GeneratedOutfit {
   final String? bottomId;
   final String? shoesId;
   final String? outerwearId; // Optional
+  final String? onePieceId; // Optional (reemplaza par top + bottom)
+  final List<String> accessoryIds; // Optional (0 a 2 accesorios)
   final int matchPercentage; // 0-100
   /// Inglés — archivo, debug, reutilización con IA.
   final String explanation;
+
   /// Español — texto que ve el usuario.
   final String explanationEs;
   final double compatibilityScore; // 0.0-1.0
@@ -109,6 +126,8 @@ class GeneratedOutfit {
     this.bottomId,
     this.shoesId,
     this.outerwearId,
+    this.onePieceId,
+    this.accessoryIds = const [],
     required this.matchPercentage,
     required this.explanation,
     this.explanationEs = '',
@@ -131,51 +150,82 @@ class GeneratedOutfit {
     }
 
     // Gemini occasionally returns snake_case or alternate keys.
-    final topId = pickId(json['topId']) ??
+    final topId =
+        pickId(json['topId']) ??
         pickId(json['top_id']) ??
         pickId(json['top']) ??
         pickId(json['topItemId']);
-    final bottomId = pickId(json['bottomId']) ??
+    final bottomId =
+        pickId(json['bottomId']) ??
         pickId(json['bottom_id']) ??
         pickId(json['bottom']) ??
         pickId(json['bottomItemId']);
-    final shoesId = pickId(json['shoesId']) ??
+    final shoesId =
+        pickId(json['shoesId']) ??
         pickId(json['shoes_id']) ??
         pickId(json['shoes']) ??
         pickId(json['shoe_id']) ??
         pickId(json['shoesItemId']);
-    final outerwearId = pickId(json['outerwearId']) ??
+    final outerwearId =
+        pickId(json['outerwearId']) ??
         pickId(json['outerwear_id']) ??
         pickId(json['outerwear']);
+    final onePieceId =
+        pickId(json['onePieceId']) ??
+        pickId(json['one_piece_id']) ??
+        pickId(json['onePiece']) ??
+        pickId(json['one_piece']) ??
+        pickId(json['dressId']) ??
+        pickId(json['dress']);
+
+    List<String> accessoryIds = [];
+    if (json['accessoryIds'] is List) {
+      accessoryIds = (json['accessoryIds'] as List)
+          .map((e) => pickId(e))
+          .whereType<String>()
+          .toList();
+    } else if (json['accessory_ids'] is List) {
+      accessoryIds = (json['accessory_ids'] as List)
+          .map((e) => pickId(e))
+          .whereType<String>()
+          .toList();
+    } else if (json['accessories'] is List) {
+      accessoryIds = (json['accessories'] as List)
+          .map((e) => pickId(e))
+          .whereType<String>()
+          .toList();
+    } else {
+      final singleAcc = pickId(json['accessoryId']) ??
+          pickId(json['accessory_id']) ??
+          pickId(json['accessory']);
+      if (singleAcc != null) accessoryIds.add(singleAcc);
+    }
 
     return GeneratedOutfit(
-      id:
-          json['id']?.toString() ??
-          json['outfitId']?.toString() ??
-          '',
+      id: json['id']?.toString() ?? json['outfitId']?.toString() ?? '',
       topId: topId,
       bottomId: bottomId,
       shoesId: shoesId,
       outerwearId: outerwearId,
-      matchPercentage:
-          json['matchPercentage'] is num
-              ? (json['matchPercentage'] as num).round()
-              : int.tryParse(
-                    json['matchPercentage']?.toString() ??
-                        json['match_percentage']?.toString() ??
-                        '',
-                  ) ??
-                  0,
+      onePieceId: onePieceId,
+      accessoryIds: accessoryIds,
+      matchPercentage: json['matchPercentage'] is num
+          ? (json['matchPercentage'] as num).round()
+          : int.tryParse(
+                  json['matchPercentage']?.toString() ??
+                      json['match_percentage']?.toString() ??
+                      '',
+                ) ??
+                0,
       explanation:
-          json['explanation']?.toString() ??
-          json['text']?.toString() ??
-          '',
+          json['explanation']?.toString() ?? json['text']?.toString() ?? '',
       explanationEs:
           json['explanationEs']?.toString() ??
           json['explanation_es']?.toString() ??
           '',
-      compatibilityScore: _parseCompat(json['compatibilityScore'] ??
-          json['compatibility_score']),
+      compatibilityScore: _parseCompat(
+        json['compatibilityScore'] ?? json['compatibility_score'],
+      ),
       metadata: json['metadata'] as Map<String, dynamic>?,
     );
   }
@@ -185,27 +235,37 @@ class GeneratedOutfit {
     return double.tryParse(v?.toString() ?? '') ?? 0.0;
   }
 
-  bool get hasCompleteLook =>
-      topId != null &&
-      bottomId != null &&
-      shoesId != null;
+  /// Look completo: Requiere calzado + (pieza única O par superior e inferior)
+  bool get hasCompleteLook {
+    final hasShoes = shoesId != null && shoesId!.isNotEmpty;
+    final hasOnePiece = onePieceId != null && onePieceId!.isNotEmpty;
+    final hasTopAndBottom =
+        (topId != null && topId!.isNotEmpty) &&
+        (bottomId != null && bottomId!.isNotEmpty);
+    return hasShoes && (hasOnePiece || hasTopAndBottom);
+  }
 
   /// For debug / user-visible errors when [hasCompleteLook] is false.
   String get missingFieldsSummary {
     final miss = <String>[];
-    if (topId == null) miss.add('top');
-    if (bottomId == null) miss.add('bottom');
-    if (shoesId == null) miss.add('shoes');
+    final hasOnePiece = onePieceId != null && onePieceId!.isNotEmpty;
+    if (!hasOnePiece) {
+      if (topId == null || topId!.isEmpty) miss.add('top');
+      if (bottomId == null || bottomId!.isEmpty) miss.add('bottom');
+    }
+    if (shoesId == null || shoesId!.isEmpty) miss.add('shoes');
     return miss.join(', ');
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      if (onePieceId != null) 'onePieceId': onePieceId,
       if (topId != null) 'topId': topId,
       if (bottomId != null) 'bottomId': bottomId,
       if (shoesId != null) 'shoesId': shoesId,
       if (outerwearId != null) 'outerwearId': outerwearId,
+      if (accessoryIds.isNotEmpty) 'accessoryIds': accessoryIds,
       'matchPercentage': matchPercentage,
       'explanation': explanation,
       if (explanationEs.isNotEmpty) 'explanationEs': explanationEs,
@@ -216,10 +276,14 @@ class GeneratedOutfit {
 
   List<String> get itemIds {
     final ids = <String>[];
-    if (topId != null) ids.add(topId!);
-    if (bottomId != null) ids.add(bottomId!);
-    if (shoesId != null) ids.add(shoesId!);
-    if (outerwearId != null) ids.add(outerwearId!);
+    if (onePieceId != null && onePieceId!.isNotEmpty) ids.add(onePieceId!);
+    if (topId != null && topId!.isNotEmpty) ids.add(topId!);
+    if (bottomId != null && bottomId!.isNotEmpty) ids.add(bottomId!);
+    if (shoesId != null && shoesId!.isNotEmpty) ids.add(shoesId!);
+    if (outerwearId != null && outerwearId!.isNotEmpty) ids.add(outerwearId!);
+    for (final accId in accessoryIds) {
+      if (accId.isNotEmpty && !ids.contains(accId)) ids.add(accId);
+    }
     return ids;
   }
 }
@@ -227,6 +291,10 @@ class GeneratedOutfit {
 class VirtualTryOnRequest {
   final GeneratedOutfit outfit;
   final List<String> itemImageUrls; // URLs de las imágenes de las prendas
+  final String?
+  garmentFlatlayUrl; // Tarea 3.4: Flat-lay consolidado (2-image pipeline)
+  final List<Map<String, String>>?
+  items; // Cutouts estructurados para composición backend
   final String? userBodyPhotoUrl; // URL de foto de cuerpo del usuario
   final String? userFacePhotoUrl; // URL de foto de cara del usuario
   final IdentityProfile? identityProfile;
@@ -235,6 +303,8 @@ class VirtualTryOnRequest {
   VirtualTryOnRequest({
     required this.outfit,
     required this.itemImageUrls,
+    this.garmentFlatlayUrl,
+    this.items,
     this.userBodyPhotoUrl,
     this.userFacePhotoUrl,
     this.identityProfile,

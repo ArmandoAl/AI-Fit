@@ -44,6 +44,7 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isUploading = false;
   bool _isLoadingPhotos = true;
   bool _isGeneratingBaseImage = false;
+  bool _isBaseImageCollageFallback = false;
 
   Future<void> _pickImage({required bool isBodyPhoto}) async {
     final targetList = isBodyPhoto ? _bodyPhotos : _facePhotos;
@@ -450,6 +451,31 @@ class _ProfilePageState extends State<ProfilePage> {
             '📊 Total photos loaded: ${_bodyPhotoUrls.length} body, ${_facePhotoUrls.length} face',
           );
         });
+
+        // Verificación de integridad: detectar si la imagen base almacenada es corrupta (< 1 KB o placeholder 1x1)
+        if (_baseImageUrl != null) {
+          final isCorrupt = await _baseImageService.isBaseImageCorrupt(_baseImageUrl!);
+          if (isCorrupt && mounted) {
+            debugPrint('⚠️ Detected corrupt base image (< 1KB). Purging and auto-regenerating clean Identity Board...');
+            await _baseImageService.deleteUserBaseImage(userId);
+            if (mounted) {
+              setState(() {
+                _baseImageUrl = null;
+                _isBaseImageCollageFallback = false;
+              });
+              if (_bodyPhotoUrls.isNotEmpty || _facePhotoUrls.isNotEmpty) {
+                _generateOrRegenerateBaseImage();
+              }
+            }
+          } else if (mounted) {
+            final isFallback = await _baseImageService.isBaseImageCollageFallback(userId);
+            if (mounted) {
+              setState(() {
+                _isBaseImageCollageFallback = isFallback;
+              });
+            }
+          }
+        }
       } else {
         debugPrint('⚠️ No profile data found for user: $userId');
       }
@@ -720,15 +746,21 @@ class _ProfilePageState extends State<ProfilePage> {
                         Row(
                           children: [
                             Icon(
-                              Icons.check_circle,
-                              color: AppColors.success,
+                              _isBaseImageCollageFallback
+                                  ? Icons.collections_bookmark_outlined
+                                  : Icons.check_circle,
+                              color: _isBaseImageCollageFallback
+                                  ? AppColors.secondary
+                                  : AppColors.success,
                               size: 24,
                             ),
                             const SizedBox(width: 12),
-                            const Expanded(
+                            Expanded(
                               child: Text(
-                        'Imagen base de identidad',
-                                style: TextStyle(
+                                _isBaseImageCollageFallback
+                                    ? 'Tablero de identidad (Collage de Respaldo)'
+                                    : 'Maniquí Base Neutral (IA)',
+                                style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -737,6 +769,76 @@ class _ProfilePageState extends State<ProfilePage> {
                           ],
                         ),
                         const SizedBox(height: 12),
+                        if (_isBaseImageCollageFallback)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.secondary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: AppColors.secondary.withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: const Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.info_outline, color: AppColors.secondary, size: 20),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Modo Collage de Respaldo Activo',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                      SizedBox(height: 2),
+                                      Text(
+                                        'Se está utilizando el tablero compuesto de fotos como respaldo defensivo. Pulsa "Regenerar" para sintetizar el maniquí neutral con IA.',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.success.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: AppColors.success.withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.auto_awesome, color: AppColors.success, size: 18),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Maniquí de Estudio IA Activo (Fondo neutro, fisionomía y complexión preservadas)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(12),
                           child: AppNetworkImage(
@@ -755,7 +857,41 @@ class _ProfilePageState extends State<ProfilePage> {
                             errorWidget: Container(
                               height: 300,
                               color: AppColors.background,
-                              child: const Icon(Icons.error),
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(
+                                    Icons.broken_image_outlined,
+                                    size: 40,
+                                    color: AppColors.error,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Error al cargar imagen base',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ElevatedButton.icon(
+                                    onPressed: _isGeneratingBaseImage
+                                        ? null
+                                        : _generateOrRegenerateBaseImage,
+                                    icon: const Icon(Icons.refresh, size: 16),
+                                    label: const Text('Reintentar'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.secondary,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),

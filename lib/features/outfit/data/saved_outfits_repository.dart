@@ -1,54 +1,125 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
-import '../../../core/services/firestore_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
+
+import '../../../core/services/supabase_client.dart';
+import '../domain/outfit_models.dart';
 import '../domain/saved_outfit_model.dart';
 
-/// Repository para outfits guardados (Firestore + fallback Storage).
+/// Repositorio de outfits guardados 100% sobre Supabase Postgres
+/// con modelo relacional (`outfit_generations`, `outfits`, `outfit_items`).
 class SavedOutfitsRepository {
-  final FirebaseFirestore _firestore = FirestoreService.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  SupabaseClient get _supabase {
+    final client = AppSupabaseClient.client;
+    if (client != null) return client;
+    return Supabase.instance.client;
+  }
 
-  /// Guarda un outfit en Firestore
+  String? _getCurrentUserId() {
+    return _supabase.auth.currentUser?.id;
+  }
+
+  static String _ensureUuid(String id) {
+    final uuidRegex = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    if (uuidRegex.hasMatch(id)) {
+      return id;
+    }
+    return const Uuid().v4();
+  }
+
+  /// Guarda un outfit relacionalmente en Supabase Postgres
   Future<void> saveOutfit(SavedOutfit savedOutfit) async {
+    final userId = _getCurrentUserId();
+    if (userId == null) throw Exception('No user logged in');
+
     try {
-      debugPrint('💾 Saving outfit to Firestore: ${savedOutfit.id}');
+      final outfitId = _ensureUuid(savedOutfit.id);
+      final generationId = const Uuid().v4();
 
-      await _firestore
-          .collection('saved_outfits')
-          .doc(savedOutfit.id)
-          .set(savedOutfit.toJson());
+      debugPrint('💾 [SavedOutfitsRepository -> Supabase] Saving outfit $outfitId');
 
-      debugPrint('✅ Outfit saved successfully');
+      await _supabase.from('outfit_generations').upsert({
+        'id': generationId,
+        'user_id': userId,
+        'idempotency_key': 'gen_$outfitId',
+        'user_prompt': savedOutfit.userPrompt.isNotEmpty
+            ? savedOutfit.userPrompt
+            : 'Saved Outfit',
+        'intent': savedOutfit.intent.toJson(),
+        'status': 'completed',
+        'text_provider': 'deepseek',
+        'text_model': 'deepseek-chat',
+        'created_at': savedOutfit.createdAt.toUtc().toIso8601String(),
+      }, onConflict: 'user_id, idempotency_key');
+
+      await _supabase.from('outfits').upsert({
+        'id': outfitId,
+        'generation_id': generationId,
+        'user_id': userId,
+        'rank': 1,
+        'match_percentage': savedOutfit.matchPercentage,
+        'compatibility_score': savedOutfit.compatibilityScore,
+        'explanation': savedOutfit.outfit.explanation,
+        'explanation_es': savedOutfit.outfit.explanationEs,
+        'try_on_path': savedOutfit.tryOnImageUrl,
+        'is_favorite': savedOutfit.isFavorite,
+        'custom_tags': savedOutfit.customTags,
+        'notes': savedOutfit.notes,
+        'view_count': savedOutfit.viewCount,
+        'created_at': savedOutfit.createdAt.toUtc().toIso8601String(),
+      }, onConflict: 'id');
+
+      final roles = [
+        if (savedOutfit.outfit.onePieceId != null &&
+            savedOutfit.outfit.onePieceId!.isNotEmpty)
+          ('one_piece', savedOutfit.outfit.onePieceId!),
+        if (savedOutfit.outfit.topId != null &&
+            savedOutfit.outfit.topId!.isNotEmpty)
+          ('top', savedOutfit.outfit.topId!),
+        if (savedOutfit.outfit.bottomId != null &&
+            savedOutfit.outfit.bottomId!.isNotEmpty)
+          ('bottom', savedOutfit.outfit.bottomId!),
+        if (savedOutfit.outfit.shoesId != null &&
+            savedOutfit.outfit.shoesId!.isNotEmpty)
+          ('shoes', savedOutfit.outfit.shoesId!),
+        if (savedOutfit.outfit.outerwearId != null &&
+            savedOutfit.outfit.outerwearId!.isNotEmpty)
+          ('outerwear', savedOutfit.outfit.outerwearId!),
+        for (final accId in savedOutfit.outfit.accessoryIds)
+          if (accId.isNotEmpty) ('accessory', accId),
+      ];
+
+      for (final item in roles) {
+        try {
+          await _supabase.from('outfit_items').upsert({
+            'outfit_id': outfitId,
+            'wardrobe_item_id': item.$2,
+            'role': item.$1,
+          }, onConflict: 'outfit_id, wardrobe_item_id');
+        } catch (itemErr) {
+          debugPrint('⚠️ Non-critical error saving outfit_item: $itemErr');
+        }
+      }
+
+      debugPrint('✅ [SavedOutfitsRepository -> Supabase] Outfit $outfitId saved');
     } catch (e) {
-      debugPrint('❌ Error saving outfit: $e');
+      debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error saving outfit: $e');
       throw Exception('Failed to save outfit: $e');
     }
   }
 
-  /// Guarda múltiples outfits en batch
   Future<void> saveOutfits(List<SavedOutfit> outfits) async {
-    try {
-      debugPrint('💾 Saving ${outfits.length} outfits to Firestore...');
-
-      final batch = _firestore.batch();
-
-      for (final outfit in outfits) {
-        final ref = _firestore.collection('saved_outfits').doc(outfit.id);
-        batch.set(ref, outfit.toJson());
+    for (final outfit in outfits) {
+      try {
+        await saveOutfit(outfit);
+      } catch (e) {
+        debugPrint('⚠️ Failed to save outfit ${outfit.id}: $e');
       }
-
-      await batch.commit();
-      debugPrint('✅ ${outfits.length} outfits saved successfully');
-    } catch (e) {
-      debugPrint('❌ Error saving outfits: $e');
-      throw Exception('Failed to save outfits: $e');
     }
   }
 
-  /// Obtiene outfits: Firestore primero; completa con imágenes try-on en Storage.
   Future<List<SavedOutfit>> getSavedOutfits({
     String? filterByOccasion,
     String? filterBySeason,
@@ -56,165 +127,351 @@ class SavedOutfitsRepository {
     List<String>? filterByStyleTags,
     bool? onlyFavorites,
   }) async {
-    final userId = _auth.currentUser?.uid;
+    final userId = _getCurrentUserId();
     if (userId == null) {
       debugPrint('⚠️ No user logged in');
       return [];
     }
 
-    debugPrint('📦 Loading saved outfits for user: $userId');
-
     try {
-      var firestoreOutfits = await _loadFromFirestore(
-        userId: userId,
-        filterByOccasion: filterByOccasion,
-        filterBySeason: filterBySeason,
-        onlyFavorites: onlyFavorites,
-      );
+      debugPrint('📦 [SavedOutfitsRepository -> Supabase] Loading lookbook for user: $userId');
 
-      firestoreOutfits = _applyClientFilters(
-        firestoreOutfits,
+      var query = _supabase.from('outfits').select('''
+        id,
+        generation_id,
+        user_id,
+        rank,
+        match_percentage,
+        compatibility_score,
+        explanation,
+        explanation_es,
+        try_on_path,
+        is_favorite,
+        custom_tags,
+        notes,
+        view_count,
+        created_at,
+        last_viewed_at,
+        outfit_generations (
+          user_prompt,
+          intent
+        ),
+        outfit_items (
+          role,
+          wardrobe_item_id
+        )
+      ''').eq('user_id', userId);
+
+      if (onlyFavorites == true) {
+        query = query.eq('is_favorite', true);
+      }
+
+      final response = await query.order('created_at', ascending: false);
+      final list = response as List;
+
+      final outfits = list.map((row) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final gen = map['outfit_generations'] is Map
+            ? Map<String, dynamic>.from(map['outfit_generations'] as Map)
+            : <String, dynamic>{};
+        final intentMap = gen['intent'] is Map
+            ? Map<String, dynamic>.from(gen['intent'] as Map)
+            : <String, dynamic>{};
+        final intent = OutfitIntent.fromJson(intentMap);
+
+        final items = (map['outfit_items'] as List? ?? []);
+        String? onePieceId;
+        String? topId;
+        String? bottomId;
+        String? shoesId;
+        String? outerwearId;
+        final accessoryIds = <String>[];
+
+        for (final item in items) {
+          final role = item['role']?.toString().toLowerCase();
+          final itemId = item['wardrobe_item_id']?.toString();
+          if (itemId == null || itemId.isEmpty) continue;
+          if (role == 'one_piece' || role == 'one-piece' || role == 'dress') {
+            onePieceId = itemId;
+          } else if (role == 'top') {
+            topId = itemId;
+          } else if (role == 'bottom') {
+            bottomId = itemId;
+          } else if (role == 'shoes') {
+            shoesId = itemId;
+          } else if (role == 'outerwear') {
+            outerwearId = itemId;
+          } else if (role == 'accessory' || role == 'accessories') {
+            accessoryIds.add(itemId);
+          }
+        }
+
+        final generatedOutfit = GeneratedOutfit(
+          id: map['id'].toString(),
+          onePieceId: onePieceId,
+          topId: topId,
+          bottomId: bottomId,
+          shoesId: shoesId,
+          outerwearId: outerwearId,
+          accessoryIds: accessoryIds,
+          matchPercentage: (map['match_percentage'] as num? ?? 0).toInt(),
+          explanation: map['explanation']?.toString() ?? '',
+          explanationEs: map['explanation_es']?.toString() ?? '',
+          compatibilityScore: (map['compatibility_score'] as num? ?? 0.0).toDouble(),
+        );
+
+        return SavedOutfit(
+          id: map['id'].toString(),
+          userId: map['user_id'].toString(),
+          tryOnImageUrl: map['try_on_path']?.toString() ?? '',
+          outfit: generatedOutfit,
+          intent: intent,
+          colors: intent.preferredColors,
+          styleTags: intent.styleTags,
+          occasion: intent.occasion,
+          season: intent.season,
+          weather: intent.weather,
+          matchPercentage: (map['match_percentage'] as num? ?? 0).toInt(),
+          compatibilityScore: (map['compatibility_score'] as num? ?? 0.0).toDouble(),
+          userPrompt: gen['user_prompt']?.toString() ?? '',
+          reasoning: intent.reasoning,
+          createdAt: DateTime.tryParse(map['created_at'].toString()) ?? DateTime.now(),
+          lastViewedAt: map['last_viewed_at'] != null
+              ? DateTime.tryParse(map['last_viewed_at'].toString())
+              : null,
+          viewCount: (map['view_count'] as num? ?? 0).toInt(),
+          isFavorite: map['is_favorite'] == true,
+          customTags: map['custom_tags'] != null
+              ? List<String>.from(map['custom_tags'] as List)
+              : [],
+          notes: map['notes']?.toString(),
+        );
+      }).toList();
+
+      var filtered = outfits;
+      if (filterByOccasion != null) {
+        filtered = filtered.where((o) => o.occasion == filterByOccasion).toList();
+      }
+      if (filterBySeason != null) {
+        filtered = filtered.where((o) => o.season == filterBySeason).toList();
+      }
+      filtered = _applyClientFilters(
+        filtered,
         filterByColors: filterByColors,
         filterByStyleTags: filterByStyleTags,
       );
 
-      debugPrint('📄 Firestore: ${firestoreOutfits.length} outfits');
-
-      // Sin filtros de Firestore: incluir try-ons que solo existen en Storage
-      final canMergeStorage = filterByOccasion == null &&
-          filterBySeason == null &&
-          onlyFavorites != true;
-
-      if (!canMergeStorage) {
-        debugPrint('✅ Loaded ${firestoreOutfits.length} saved outfits');
-        return firestoreOutfits;
-      }
-
-      final storageOutfits = await _loadFromStorage(userId);
-      debugPrint('🗄️ Storage try-ons: ${storageOutfits.length} images');
-
-      final merged = _mergeFirestoreAndStorage(
-        firestoreOutfits,
-        storageOutfits,
-      );
-
-      await _backfillStorageOnlyToFirestore(merged);
-
-      debugPrint('✅ Loaded ${merged.length} saved outfits (merged)');
-      return merged;
-    } catch (e, stack) {
-      debugPrint('❌ Error loading saved outfits: $e');
-      debugPrint('$stack');
-
-      // Si Firestore falla, al menos mostrar lo que hay en Storage
-      try {
-        final storageOnly = await _loadFromStorage(userId);
-        debugPrint(
-          '⚠️ Fallback: returning ${storageOnly.length} outfits from Storage',
-        );
-        return _applyClientFilters(
-          storageOnly,
-          filterByColors: filterByColors,
-          filterByStyleTags: filterByStyleTags,
-        );
-      } catch (storageError) {
-        debugPrint('❌ Storage fallback failed: $storageError');
-        rethrow;
-      }
-    }
-  }
-
-  Future<List<SavedOutfit>> _loadFromFirestore({
-    required String userId,
-    String? filterByOccasion,
-    String? filterBySeason,
-    bool? onlyFavorites,
-  }) async {
-    Query query = _firestore
-        .collection('saved_outfits')
-        .where('userId', isEqualTo: userId);
-
-    if (filterByOccasion != null) {
-      query = query.where('occasion', isEqualTo: filterByOccasion);
-    }
-    if (filterBySeason != null) {
-      query = query.where('season', isEqualTo: filterBySeason);
-    }
-    if (onlyFavorites == true) {
-      query = query.where('isFavorite', isEqualTo: true);
-    }
-
-    query = query.orderBy('createdAt', descending: true);
-
-    final snapshot = await query.get();
-
-    return snapshot.docs
-        .map(
-          (doc) => SavedOutfit.fromJson({
-            ...doc.data() as Map<String, dynamic>,
-            'id': doc.id,
-          }),
-        )
-        .toList();
-  }
-
-  Future<List<SavedOutfit>> _loadFromStorage(String userId) async {
-    try {
-      final ref = _storage.ref('users/$userId/outfits');
-      final listResult = await ref.listAll();
-      final outfits = <SavedOutfit>[];
-
-      for (final item in listResult.items) {
-        if (!item.name.startsWith('tryon_')) continue;
-
-        final url = await item.getDownloadURL();
-        final createdAt = _parseTryOnCreatedAt(item.name);
-
-        outfits.add(
-          SavedOutfit.fromStorageTryOn(
-            userId: userId,
-            tryOnImageUrl: url,
-            storageFileName: item.name,
-            createdAt: createdAt,
-          ),
-        );
-      }
-
-      outfits.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return outfits;
+      debugPrint('✅ [SavedOutfitsRepository -> Supabase] Loaded ${filtered.length} saved outfits');
+      return filtered;
     } catch (e) {
-      debugPrint('⚠️ Could not list Storage outfits: $e');
+      debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error loading outfits: $e');
       return [];
     }
   }
 
-  DateTime _parseTryOnCreatedAt(String fileName) {
-    final match = RegExp(r'tryon_(\d+)').firstMatch(fileName);
-    if (match != null) {
-      final ms = int.tryParse(match.group(1)!);
-      if (ms != null) {
-        return DateTime.fromMillisecondsSinceEpoch(ms);
+  Future<SavedOutfit?> getOutfitById(String outfitId) async {
+    final userId = _getCurrentUserId();
+    if (userId == null) return null;
+
+    try {
+      final res = await _supabase
+          .from('outfits')
+          .select('''
+            id,
+            generation_id,
+            user_id,
+            rank,
+            match_percentage,
+            compatibility_score,
+            explanation,
+            explanation_es,
+            try_on_path,
+            is_favorite,
+            custom_tags,
+            notes,
+            view_count,
+            created_at,
+            last_viewed_at,
+            outfit_generations (
+              user_prompt,
+              intent
+            ),
+            outfit_items (
+              role,
+              wardrobe_item_id
+            )
+          ''')
+          .eq('id', outfitId)
+          .maybeSingle();
+
+      if (res == null) return null;
+
+      final map = Map<String, dynamic>.from(res);
+      final gen = map['outfit_generations'] is Map
+          ? Map<String, dynamic>.from(map['outfit_generations'] as Map)
+          : <String, dynamic>{};
+      final intentMap = gen['intent'] is Map
+          ? Map<String, dynamic>.from(gen['intent'] as Map)
+          : <String, dynamic>{};
+      final intent = OutfitIntent.fromJson(intentMap);
+
+      final items = (map['outfit_items'] as List? ?? []);
+      String? topId;
+      String? bottomId;
+      String? shoesId;
+      String? outerwearId;
+
+      for (final item in items) {
+        final role = item['role'];
+        final itemId = item['wardrobe_item_id']?.toString();
+        if (role == 'top') topId = itemId;
+        if (role == 'bottom') bottomId = itemId;
+        if (role == 'shoes') shoesId = itemId;
+        if (role == 'outerwear') outerwearId = itemId;
       }
+
+      final generatedOutfit = GeneratedOutfit(
+        id: map['id'].toString(),
+        topId: topId,
+        bottomId: bottomId,
+        shoesId: shoesId,
+        outerwearId: outerwearId,
+        matchPercentage: (map['match_percentage'] as num? ?? 0).toInt(),
+        explanation: map['explanation']?.toString() ?? '',
+        explanationEs: map['explanation_es']?.toString() ?? '',
+        compatibilityScore: (map['compatibility_score'] as num? ?? 0.0).toDouble(),
+      );
+
+      return SavedOutfit(
+        id: map['id'].toString(),
+        userId: map['user_id'].toString(),
+        tryOnImageUrl: map['try_on_path']?.toString() ?? '',
+        outfit: generatedOutfit,
+        intent: intent,
+        colors: intent.preferredColors,
+        styleTags: intent.styleTags,
+        occasion: intent.occasion,
+        season: intent.season,
+        weather: intent.weather,
+        matchPercentage: (map['match_percentage'] as num? ?? 0).toInt(),
+        compatibilityScore: (map['compatibility_score'] as num? ?? 0.0).toDouble(),
+        userPrompt: gen['user_prompt']?.toString() ?? '',
+        reasoning: intent.reasoning,
+        createdAt: DateTime.tryParse(map['created_at'].toString()) ?? DateTime.now(),
+        lastViewedAt: map['last_viewed_at'] != null
+            ? DateTime.tryParse(map['last_viewed_at'].toString())
+            : null,
+        viewCount: (map['view_count'] as num? ?? 0).toInt(),
+        isFavorite: map['is_favorite'] == true,
+        customTags: map['custom_tags'] != null
+            ? List<String>.from(map['custom_tags'] as List)
+            : [],
+        notes: map['notes']?.toString(),
+      );
+    } catch (e) {
+      debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error getting outfit: $e');
+      return null;
     }
-    return DateTime.now();
   }
 
-  List<SavedOutfit> _mergeFirestoreAndStorage(
-    List<SavedOutfit> firestore,
-    List<SavedOutfit> storage,
-  ) {
-    final knownUrls = firestore.map((o) => o.tryOnImageUrl).toSet();
-    final merged = List<SavedOutfit>.from(firestore);
-
-    for (final item in storage) {
-      if (item.tryOnImageUrl.isEmpty) continue;
-      if (knownUrls.contains(item.tryOnImageUrl)) continue;
-      merged.add(item);
-      knownUrls.add(item.tryOnImageUrl);
+  Future<void> updateTryOnImageUrl(String outfitId, String tryOnImageUrl) async {
+    try {
+      await _supabase
+          .from('outfits')
+          .update({'try_on_path': tryOnImageUrl})
+          .eq('id', outfitId);
+      debugPrint('✅ [SavedOutfitsRepository -> Supabase] Try-on URL updated');
+    } catch (e) {
+      debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error updating try-on URL: $e');
     }
+  }
 
-    merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return merged;
+  Future<void> updateOutfit(SavedOutfit outfit) async {
+    try {
+      await _supabase.from('outfits').update({
+        'is_favorite': outfit.isFavorite,
+        'custom_tags': outfit.customTags,
+        'notes': outfit.notes,
+        'try_on_path': outfit.tryOnImageUrl,
+      }).eq('id', outfit.id);
+      debugPrint('✅ [SavedOutfitsRepository -> Supabase] Outfit updated');
+    } catch (e) {
+      debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error updating outfit: $e');
+      throw Exception('Failed to update outfit: $e');
+    }
+  }
+
+  Future<void> toggleFavorite(String outfitId, bool isFavorite) async {
+    try {
+      await _supabase
+          .from('outfits')
+          .update({'is_favorite': isFavorite})
+          .eq('id', outfitId);
+      debugPrint('✅ [SavedOutfitsRepository -> Supabase] Favorite toggled');
+    } catch (e) {
+      debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error toggling favorite: $e');
+      throw Exception('Failed to toggle favorite: $e');
+    }
+  }
+
+  Future<void> incrementViewCount(String outfitId) async {
+    try {
+      final res = await _supabase
+          .from('outfits')
+          .select('view_count')
+          .eq('id', outfitId)
+          .maybeSingle();
+      final current = (res?['view_count'] as num? ?? 0).toInt();
+      await _supabase.from('outfits').update({
+        'view_count': current + 1,
+        'last_viewed_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', outfitId);
+    } catch (e) {
+      debugPrint('⚠️ [SavedOutfitsRepository -> Supabase] Error incrementing view count: $e');
+    }
+  }
+
+  Future<void> addCustomTags(String outfitId, List<String> tags) async {
+    try {
+      final res = await _supabase
+          .from('outfits')
+          .select('custom_tags')
+          .eq('id', outfitId)
+          .maybeSingle();
+      final existing = (res?['custom_tags'] as List? ?? [])
+          .map((e) => e.toString())
+          .toSet();
+      existing.addAll(tags);
+      await _supabase
+          .from('outfits')
+          .update({'custom_tags': existing.toList()})
+          .eq('id', outfitId);
+    } catch (e) {
+      debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error adding custom tags: $e');
+      throw Exception('Failed to add custom tags: $e');
+    }
+  }
+
+  Future<void> updateNotes(String outfitId, String? notes) async {
+    try {
+      await _supabase
+          .from('outfits')
+          .update({'notes': notes})
+          .eq('id', outfitId);
+    } catch (e) {
+      debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error updating notes: $e');
+      throw Exception('Failed to update notes: $e');
+    }
+  }
+
+  Future<void> deleteOutfit(String outfitId) async {
+    try {
+      await _supabase.from('outfits').delete().eq('id', outfitId);
+      debugPrint('✅ [SavedOutfitsRepository -> Supabase] Outfit deleted: $outfitId');
+    } catch (e) {
+      debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error deleting outfit: $e');
+      throw Exception('Failed to delete outfit: $e');
+    }
   }
 
   List<SavedOutfit> _applyClientFilters(
@@ -223,166 +480,23 @@ class SavedOutfitsRepository {
     List<String>? filterByStyleTags,
   }) {
     var result = outfits;
+
     if (filterByColors != null && filterByColors.isNotEmpty) {
-      result = result
-          .where(
-            (o) => o.colors.any((c) => filterByColors.contains(c)),
-          )
-          .toList();
+      result = result.where((outfit) {
+        final outfitColors = outfit.colors.map((c) => c.toLowerCase()).toSet();
+        final searchColors = filterByColors.map((c) => c.toLowerCase()).toSet();
+        return outfitColors.intersection(searchColors).isNotEmpty;
+      }).toList();
     }
+
     if (filterByStyleTags != null && filterByStyleTags.isNotEmpty) {
-      result = result
-          .where(
-            (o) => o.styleTags.any((t) => filterByStyleTags.contains(t)),
-          )
-          .toList();
+      result = result.where((outfit) {
+        final outfitTags = outfit.styleTags.map((t) => t.toLowerCase()).toSet();
+        final searchTags = filterByStyleTags.map((t) => t.toLowerCase()).toSet();
+        return outfitTags.intersection(searchTags).isNotEmpty;
+      }).toList();
     }
+
     return result;
-  }
-
-  /// Migra try-ons de Storage que aún no tienen documento en Firestore.
-  Future<void> _backfillStorageOnlyToFirestore(List<SavedOutfit> merged) async {
-    final toBackfill =
-        merged.where((o) => o.id.startsWith('storage_')).toList();
-    if (toBackfill.isEmpty) return;
-
-    debugPrint('🔄 Backfilling ${toBackfill.length} outfits to Firestore...');
-    try {
-      await saveOutfits(toBackfill);
-    } catch (e) {
-      debugPrint('⚠️ Backfill skipped: $e');
-    }
-  }
-
-  /// Obtiene un outfit por ID
-  Future<SavedOutfit?> getOutfitById(String outfitId) async {
-    try {
-      final doc = await _firestore
-          .collection('saved_outfits')
-          .doc(outfitId)
-          .get();
-
-      if (doc.exists) {
-        return SavedOutfit.fromJson({...doc.data()!, 'id': doc.id});
-      }
-
-      return null;
-    } catch (e) {
-      debugPrint('❌ Error loading outfit: $e');
-      return null;
-    }
-  }
-
-  /// Actualiza solo la URL de try-on (flujo progresivo P1).
-  Future<void> updateTryOnImageUrl(String outfitId, String tryOnImageUrl) async {
-    try {
-      await _firestore.collection('saved_outfits').doc(outfitId).update({
-        'tryOnImageUrl': tryOnImageUrl,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      debugPrint('✅ Try-on URL updated for outfit $outfitId');
-    } catch (e) {
-      debugPrint('❌ Error updating try-on URL: $e');
-      throw Exception('Failed to update try-on image: $e');
-    }
-  }
-
-  /// Actualiza un outfit (favoritos, tags, notas, etc.)
-  Future<void> updateOutfit(SavedOutfit outfit) async {
-    try {
-      debugPrint('📝 Updating outfit: ${outfit.id}');
-
-      await _firestore
-          .collection('saved_outfits')
-          .doc(outfit.id)
-          .update(outfit.toJson());
-
-      debugPrint('✅ Outfit updated successfully');
-    } catch (e) {
-      debugPrint('❌ Error updating outfit: $e');
-      throw Exception('Failed to update outfit: $e');
-    }
-  }
-
-  /// Marca/unmarca como favorito
-  Future<void> toggleFavorite(String outfitId, bool isFavorite) async {
-    try {
-      await _firestore.collection('saved_outfits').doc(outfitId).update({
-        'isFavorite': isFavorite,
-      });
-      debugPrint('✅ Favorite toggled: $isFavorite');
-    } catch (e) {
-      debugPrint('❌ Error toggling favorite: $e');
-      throw Exception('Failed to toggle favorite: $e');
-    }
-  }
-
-  /// Incrementa el contador de vistas
-  Future<void> incrementViewCount(String outfitId) async {
-    try {
-      final doc = await _firestore
-          .collection('saved_outfits')
-          .doc(outfitId)
-          .get();
-
-      if (doc.exists) {
-        final currentCount = doc.data()?['viewCount'] ?? 0;
-        await _firestore.collection('saved_outfits').doc(outfitId).update({
-          'viewCount': currentCount + 1,
-          'lastViewedAt': FieldValue.serverTimestamp(),
-        });
-      }
-    } catch (e) {
-      debugPrint('⚠️ Error incrementing view count: $e');
-    }
-  }
-
-  /// Agrega tags personalizados
-  Future<void> addCustomTags(String outfitId, List<String> tags) async {
-    try {
-      final doc = await _firestore
-          .collection('saved_outfits')
-          .doc(outfitId)
-          .get();
-
-      if (doc.exists) {
-        final currentTags = List<String>.from(doc.data()?['customTags'] ?? []);
-        final newTags = {...currentTags, ...tags}.toList();
-
-        await _firestore.collection('saved_outfits').doc(outfitId).update({
-          'customTags': newTags,
-        });
-      }
-    } catch (e) {
-      debugPrint('❌ Error adding custom tags: $e');
-      throw Exception('Failed to add custom tags: $e');
-    }
-  }
-
-  /// Actualiza las notas del usuario
-  Future<void> updateNotes(String outfitId, String? notes) async {
-    try {
-      await _firestore.collection('saved_outfits').doc(outfitId).update({
-        'notes': notes,
-      });
-      debugPrint('✅ Notes updated');
-    } catch (e) {
-      debugPrint('❌ Error updating notes: $e');
-      throw Exception('Failed to update notes: $e');
-    }
-  }
-
-  /// Elimina un outfit
-  Future<void> deleteOutfit(String outfitId) async {
-    try {
-      debugPrint('🗑️ Deleting outfit: $outfitId');
-
-      await _firestore.collection('saved_outfits').doc(outfitId).delete();
-
-      debugPrint('✅ Outfit deleted successfully');
-    } catch (e) {
-      debugPrint('❌ Error deleting outfit: $e');
-      throw Exception('Failed to delete outfit: $e');
-    }
   }
 }

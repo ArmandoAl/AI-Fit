@@ -1,0 +1,21 @@
+{
+  "name": "aifit-migration-scripts",
+  "version": "1.0.0",
+  "description": "ETL and verification scripts for migrating AI-Fit data from Firebase to Supabase",
+  "main": "migrate_firebase_to_supabase.ts",
+  "scripts": {
+    "migrate": "tsx migrate_firebase_to_supabase.ts",
+    "verify": "tsx verify_migration.ts",
+    "smoke-test": "tsx smoke_test_e2e.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "dotenv": "^16.4.7",
+    "firebase-admin": "^13.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

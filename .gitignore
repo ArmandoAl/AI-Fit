@@ -18,10 +18,10 @@ migrate_working_dir/
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code launch configurations containing local secrets
+.vscode/launch.json
+.vscode/*.local.json
+!.vscode/launch.example.json
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -47,3 +47,18 @@ app.*.map.json
 
 # FVM Version Cache
 .fvm/
+
+# Environment files and secrets
+.env
+.env.*
+*.env
+env.json
+*.env.json
+!env.example.json
+serviceAccountKey*.json
+*.serviceAccountKey.json
+
+# Node & Migration artifacts
+node_modules/
+.migration_checkpoint.json
+*.migration_checkpoint.json

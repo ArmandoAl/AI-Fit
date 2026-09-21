@@ -8,6 +8,7 @@ import 'package:aifit/features/stylist/presentation/pages/stylist_page.dart';
 import 'package:aifit/features/wardrobe/presentation/pages/wardrobe_page.dart';
 import 'package:aifit/features/outfit/presentation/pages/generate_outfit_page.dart';
 import 'package:aifit/features/outfit/presentation/pages/saved_outfits_page.dart';
+import 'package:aifit/features/outfit/presentation/screens/smart_wardrobe_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -158,6 +159,12 @@ GoRouter createRouter(BuildContext context) {
         path: '/generate-outfit',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const GenerateOutfitPage(),
+      ),
+      // Ruta para Smart Wardrobe de Cher (Clueless x Monster High)
+      GoRoute(
+        path: '/smart-wardrobe',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const SmartWardrobeScreen(),
       ),
       // Ruta hija para outfits guardados (fuera del bottom nav)
       GoRoute(

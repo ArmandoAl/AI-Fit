@@ -28,13 +28,14 @@ service cloud.firestore {
       // Allow reading individual documents if userId matches
       allow get: if signedIn() && resource.data.userId == request.auth.uid;
       
-      // Allow updating/deleting if userId matches
-      allow update, delete: if signedIn() && resource.data.userId == request.auth.uid;
+      // Allow list (queries) only if scoped to current user
+      allow list: if signedIn() && resource.data.userId == request.auth.uid;
       
-      // Allow list (queries) for authenticated users
-      // Note: The app code must always filter by userId == request.auth.uid
-      // This is enforced in WardrobeRepositoryImpl.getWardrobeItems()
-      allow list: if signedIn();
+      // Allow updating only if owner and userId field is not altered
+      allow update: if signedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId;
+
+      // Allow deleting if userId matches
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
     }
 
     // Saved generated outfits (scoped by userId field)

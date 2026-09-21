@@ -107,6 +107,7 @@ $json
     required bool hasBaseImage,
     required bool hasFaceAnchor,
     required int garmentCount,
+    bool hasFlatlay = false,
   }) {
     final lines = <String>['[INPUT_IMAGES — read in order]'];
     var index = 1;
@@ -128,7 +129,13 @@ $json
       index++;
     }
 
-    if (garmentCount > 0) {
+    if (hasFlatlay) {
+      lines.add(
+        'Image $index: CONSOLIDATED_GARMENT_FLATLAY — unified 2-image pipeline. '
+        'Shows all outfit garments and accessories arranged on a clean white background. '
+        'Transfer all items onto the person accurately.',
+      );
+    } else if (garmentCount > 0) {
       final end = index + garmentCount - 1;
       if (garmentCount == 1) {
         lines.add(
@@ -166,14 +173,36 @@ $json
     required bool hasBaseImage,
     required bool hasFaceAnchor,
     required int garmentCount,
+    bool hasFlatlay = false,
+    bool isOnePiece = false,
+    List<String> accessoryDescriptions = const [],
   }) {
     final identityBlock = buildTryOnBlock(profile);
     final imageRoles = tryOnImageRoles(
       hasBaseImage: hasBaseImage,
       hasFaceAnchor: hasFaceAnchor,
       garmentCount: garmentCount,
+      hasFlatlay: hasFlatlay,
     );
     final jsonBlock = profileJsonBlock(profile);
+
+    final onePieceSection = isOnePiece
+        ? '''
+[OUTFIT_TYPE_SPECIFICATION]
+GARMENT_TYPE: FULL_BODY_ONE_PIECE (Dress / Jumpsuit / Romper)
+CRITICAL INSTRUCTION: The subject is wearing a single continuous full-body dress or one-piece garment paired with footwear.
+Do NOT render, paint, or hallucinate pants, trousers, jeans, shorts, skirts, or any separate bottom garments under any circumstances.
+'''
+        : '';
+
+    final accessoriesSection = accessoryDescriptions.isNotEmpty
+        ? '''
+[ACCESSORIES_STYLING]
+Include and style all accessories shown in the garment flat-lay:
+${accessoryDescriptions.map((a) => '- $a').join('\n')}
+The subject must wear or carry these accessories naturally (e.g. necklace worn around the neck, earrings on ears, handbag held in hand or over shoulder, scarf draped naturally).
+'''
+        : '';
 
     return '''
 [OUTPUT_SPECIFICATIONS]
@@ -188,7 +217,7 @@ $imageRoles
 $identityBlock
 
 $jsonBlock
-
+$onePieceSection$accessoriesSection
 [INSTRUCTION]
 Perform a virtual try-on on the EXISTING person from the identity reference image(s).
 Replace ONLY their clothing with the garment reference images.
@@ -200,12 +229,16 @@ The face and identity MUST remain the same person — recognizable and faithful 
 - Full-body or 3/4 ecommerce catalog framing, neutral studio background
 - Soft even lighting, natural skin texture, no beauty filters
 - Realistic clothing drape and proportions on the SAME body
+- If wearing a one-piece dress, drape seamlessly across the body down to the hemline with NO separate bottom garments
+- Style any accessories naturally with authentic texture and placement
 
 [AVOID]
 - Generating a different face or generic model
 - Skin lightening, ethnic alteration, face beautification
 - Cinematic/editorial styling, dramatic shadows
 - Ignoring glasses or visible accessories from face reference
+- Hallucinating pants or trousers under a one-piece dress
+- Omitting accessories present in the garment flat-lay
 
 [FINAL_OBJECTIVE]
 One photorealistic image of the SAME individual wearing the complete outfit.

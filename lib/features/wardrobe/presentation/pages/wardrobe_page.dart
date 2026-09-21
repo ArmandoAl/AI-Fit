@@ -20,7 +20,15 @@ import 'add_wardrobe_item_page.dart';
 class WardrobePage extends StatelessWidget {
   const WardrobePage({super.key});
 
-  static const _filterKeys = ['All', 'top', 'bottom', 'shoes', 'outerwear'];
+  static const _filterKeys = [
+    'All',
+    'top',
+    'bottom',
+    'one_piece',
+    'shoes',
+    'outerwear',
+    'accessories',
+  ];
 
   static String _filterLabel(String key) {
     if (key == 'All') return AppStringsEs.filterAll;
@@ -45,7 +53,11 @@ class WardrobePage extends StatelessWidget {
               navigator.pop();
 
               final picker = ImagePicker();
-              final images = await picker.pickMultiImage(imageQuality: 85);
+              final images = await picker.pickMultiImage(
+                maxWidth: 1600,
+                maxHeight: 1600,
+                imageQuality: 85,
+              );
 
               if (images.isNotEmpty && context.mounted) {
                 final initial = await AppImage.fromXFiles(images);
@@ -72,6 +84,8 @@ class WardrobePage extends StatelessWidget {
               final picker = ImagePicker();
               final image = await picker.pickImage(
                 source: ImageSource.camera,
+                maxWidth: 1600,
+                maxHeight: 1600,
                 imageQuality: 85,
               );
 
@@ -104,8 +118,12 @@ class WardrobePage extends StatelessWidget {
           appBar: AppPageAppBar(
             title: AppStringsEs.myWardrobe,
             subtitle: AppStringsEs.curateCloset,
-            automaticallyImplyLeading: false,
             actions: [
+              IconButton(
+                onPressed: () => context.push('/smart-wardrobe'),
+                icon: const Icon(Icons.auto_awesome, color: AppColors.neonMagenta),
+                tooltip: "Cher's Smart Closet",
+              ),
               IconButton(
                 onPressed: () {},
                 icon: const Icon(Icons.search_outlined),

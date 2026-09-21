@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/l10n/app_strings_es.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/cold_start_loader.dart';
 import '../../../outfit/domain/try_on_status.dart';
 import '../../domain/chat_models.dart';
 
@@ -293,21 +294,19 @@ class _TryOnStatusOverlay extends StatelessWidget {
     switch (status) {
       case TryOnStatus.generating:
         return Container(
-          color: Colors.black38,
+          color: Colors.black54,
+          padding: const EdgeInsets.all(8),
           child: const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Generando vista…',
-                  style: TextStyle(color: Colors.white, fontSize: 11),
-                ),
-              ],
+            child: ColdStartProgressIndicator(
+              initialMessage: 'Generando vista…',
+              coldStartMessage: 'Despertando vestidor… ✨',
+              prolongedMessage: 'Preparando percheros… 🦇',
+              spinnerColor: AppColors.neonMint,
+              textStyle: TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         );

@@ -1,204 +1,122 @@
-import 'package:firebase_ai/firebase_ai.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:dio/dio.dart';
 
 import '../../../core/constants/identity_consistency_prompt.dart';
-import '../../../core/platform/network_image_loader.dart';
-import '../../../core/services/image_byte_cache.dart';
-import '../../../core/services/storage_service.dart';
-import '../../../core/utils/image_compression_util.dart';
-import '../../../core/utils/ui_frame_yield.dart';
+import '../../../core/services/deepseek_service.dart';
+import '../../../core/services/supabase_client.dart';
 import '../domain/outfit_models.dart';
 import 'user_base_image_service.dart';
 
 class VirtualTryOnService {
-  final Dio _dio = Dio();
-  final UserBaseImageService _baseImageService = UserBaseImageService();
-  final StorageService _storageService = StorageService();
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final UserBaseImageService _baseImageService;
+  final DeepSeekService _gateway;
+
+  VirtualTryOnService({
+    UserBaseImageService? baseImageService,
+    DeepSeekService? gatewayClient,
+  })  : _baseImageService = baseImageService ?? UserBaseImageService(),
+        _gateway = gatewayClient ?? const DeepSeekService();
 
   Future<VirtualTryOnResult> generateTryOnImage({
     required VirtualTryOnRequest request,
     required String userId,
   }) async {
+    if (!AppSupabaseClient.isInitialized || AppSupabaseClient.client == null) {
+      throw Exception('Supabase client is not initialized');
+    }
+
     try {
       debugPrint(
-        '🎨 Generating Virtual Try-On image for outfit: ${request.outfit.id}',
+        '🌐 [VirtualTryOnService] Routing try-on to server-side ai-router for outfit: ${request.outfit.id}',
       );
+      final baseImageUrl = await _baseImageService.getUserBaseImageUrl(userId);
+      final effectiveIdentityUrl = baseImageUrl ??
+          request.userBodyPhotoUrl ??
+          request.userFacePhotoUrl ??
+          '';
 
-      Uint8List? userBaseImageBytes;
-      final userBaseImageUrl =
-          await _baseImageService.getUserBaseImageUrl(userId);
+      // Tarea 3.4 & Accesorios-2: Resolver cutouts para el pipeline de 2 imágenes (Identity + Flat-Lay)
+      List<Map<String, String>>? outfitItemsWithCutouts = request.items;
+      final accessoryDescriptions = <String>[];
+      final isOnePiece = request.outfit.onePieceId != null &&
+          request.outfit.onePieceId!.isNotEmpty;
 
-      if (userBaseImageUrl != null) {
-        debugPrint('✅ Using existing user base image');
+      if (request.outfit.itemIds.isNotEmpty) {
         try {
-          userBaseImageBytes =
-              await NetworkImageLoader.downloadBytes(_dio, userBaseImageUrl);
-        } catch (e) {
-          debugPrint(
-            '⚠️ Failed to download user base image, falling back: $e',
-          );
-          userBaseImageBytes = null;
+          final rows = await AppSupabaseClient.client!
+              .from('wardrobe_items')
+              .select('id, category, subtype, name, cutout_path')
+              .inFilter('id', request.outfit.itemIds);
+          if (rows.isNotEmpty) {
+            final list = <Map<String, String>>[];
+            for (final r in rows) {
+              final cutout = r['cutout_path'] as String?;
+              final cat = r['category'] as String?;
+              final name = r['name'] as String? ?? '';
+              final subtype = r['subtype'] as String? ?? '';
+              if (cutout != null && cutout.isNotEmpty && cat != null) {
+                list.add({
+                  'category': cat,
+                  'cutoutPath': cutout,
+                  if (subtype.isNotEmpty) 'subtype': subtype,
+                  if (name.isNotEmpty) 'name': name,
+                });
+              }
+              if (cat == 'accessories' ||
+                  cat == 'accessory' ||
+                  cat == 'scarf' ||
+                  cat == 'bag') {
+                accessoryDescriptions.add(name.isNotEmpty ? name : subtype);
+              }
+            }
+            if (list.isNotEmpty && outfitItemsWithCutouts == null) {
+              outfitItemsWithCutouts = list;
+              debugPrint(
+                '✅ [VirtualTryOnService] Resolved ${list.length} cutouts for flat-lay generation',
+              );
+            }
+          }
+        } catch (cutoutErr) {
+          debugPrint('⚠️ [VirtualTryOnService] Could not resolve cutouts: $cutoutErr');
         }
       }
-
-      // Face anchor improves likeness even when base image exists (close-up detail).
-      Uint8List? userFaceBytes;
-      if (request.userFacePhotoUrl != null &&
-          request.userFacePhotoUrl!.isNotEmpty) {
-        try {
-          userFaceBytes = await NetworkImageLoader.downloadBytes(
-            _dio,
-            request.userFacePhotoUrl!,
-          );
-          debugPrint('✅ Face anchor loaded for try-on');
-        } catch (e) {
-          debugPrint('⚠️ Failed to download face anchor: $e');
-        }
-      }
-
-      final garmentBytes = await ImageByteCache.instance.prepareGarmentBytesForUrls(
-        dio: _dio,
-        urls: request.itemImageUrls,
-      );
-
-      Uint8List? userBodyBytes;
-      if (userBaseImageBytes == null && request.userBodyPhotoUrl != null) {
-        try {
-          userBodyBytes = await NetworkImageLoader.downloadBytes(
-            _dio,
-            request.userBodyPhotoUrl!,
-          );
-        } catch (e) {
-          debugPrint('⚠️ Failed to download user body photo: $e');
-        }
-      }
-
-      final hasBase = userBaseImageBytes != null;
-      final hasFace = userFaceBytes != null;
-      final hasBody = userBodyBytes != null;
-
-      debugPrint(
-        '📸 Try-on payload: base=$hasBase face=$hasFace body=$hasBody '
-        'garments=${garmentBytes.length} '
-        'identityProfile=${request.identityProfile != null && !request.identityProfile!.isEmpty}',
-      );
 
       final prompt = IdentityConsistencyPrompt.buildTryOnPrompt(
         profile: request.identityProfile,
-        hasBaseImage: hasBase,
-        hasFaceAnchor: hasFace,
-        garmentCount: garmentBytes.length,
+        hasBaseImage: baseImageUrl != null,
+        hasFaceAnchor: request.userFacePhotoUrl != null,
+        garmentCount: request.itemImageUrls.length,
+        hasFlatlay: request.garmentFlatlayUrl != null ||
+            (outfitItemsWithCutouts != null && outfitItemsWithCutouts.isNotEmpty),
+        isOnePiece: isOnePiece,
+        accessoryDescriptions: accessoryDescriptions,
       );
 
-      await yieldToUi();
+      final idempotencyKey = 'tryon_${userId}_${request.outfit.id}';
 
-      final model = FirebaseAI.vertexAI().generativeModel(
-        model: 'gemini-2.5-flash-image',
-        generationConfig: GenerationConfig(
-          responseModalities: [ResponseModalities.image],
-          candidateCount: 1,
-        ),
-        safetySettings: [
-          SafetySetting(
-            HarmCategory.sexuallyExplicit,
-            HarmBlockThreshold.none,
-            HarmBlockMethod.severity,
-          ),
-          SafetySetting(
-            HarmCategory.harassment,
-            HarmBlockThreshold.none,
-            HarmBlockMethod.severity,
-          ),
-          SafetySetting(
-            HarmCategory.dangerousContent,
-            HarmBlockThreshold.none,
-            HarmBlockMethod.severity,
-          ),
-          SafetySetting(
-            HarmCategory.hateSpeech,
-            HarmBlockThreshold.none,
-            HarmBlockMethod.severity,
-          ),
-        ],
-      );
-
-      final parts = <Part>[];
-
-      // Image 1: identity base — send raw to avoid double JPEG loss on face detail.
-      if (userBaseImageBytes != null) {
-        parts.add(InlineDataPart('image/jpeg', userBaseImageBytes));
-      } else if (userBodyBytes != null) {
-        final bytes = await ImageCompressionUtil.compressIdentityBytes(
-          userBodyBytes,
-        );
-        parts.add(InlineDataPart('image/jpeg', bytes));
-      }
-
-      // Image 2: face close-up anchor (glasses, facial detail).
-      if (userFaceBytes != null) {
-        final bytes = await ImageCompressionUtil.compressIdentityBytes(
-          userFaceBytes,
-        );
-        parts.add(InlineDataPart('image/jpeg', bytes));
-      }
-
-      for (final bytes in garmentBytes) {
-        parts.add(InlineDataPart('image/jpeg', bytes));
-      }
-
-      parts.add(TextPart(prompt));
-
-      final response = await model.generateContent([Content.multi(parts)]);
-      final imageUrl = await _extractAndUploadImage(response);
-
-      if (imageUrl == null) {
-        throw Exception('Failed to extract image URL from response');
-      }
-
-      return VirtualTryOnResult(
+      final res = await _gateway.generateTryOn(
+        identityImageUrl: effectiveIdentityUrl,
+        garmentImageUrls: request.itemImageUrls,
+        garmentFlatlayUrl: request.garmentFlatlayUrl,
+        items: outfitItemsWithCutouts,
+        prompt: prompt,
         outfitId: request.outfit.id,
-        generatedImageUrl: imageUrl,
-        generatedAt: DateTime.now(),
+        idempotencyKey: idempotencyKey,
       );
-    } catch (e) {
-      debugPrint('❌ Error generating try-on image: $e');
-      throw Exception('Failed to generate try-on image: $e');
-    }
-  }
 
-  Future<String?> _extractAndUploadImage(GenerateContentResponse response) async {
-    try {
-      final userId = _auth.currentUser?.uid;
-      if (userId == null) throw Exception('User not authenticated');
-
-      Uint8List? imageBytes;
-
-      if (response.candidates.isNotEmpty) {
-        for (final part in response.candidates.first.content.parts) {
-          if (part is InlineDataPart &&
-              part.mimeType.startsWith('image/')) {
-            imageBytes = part.bytes;
-            break;
-          }
-        }
+      final imageUrl = res['imageUrl']?.toString();
+      if (imageUrl != null && imageUrl.isNotEmpty) {
+        debugPrint('✅ [VirtualTryOnService] Server-side try-on successful: $imageUrl');
+        return VirtualTryOnResult(
+          outfitId: request.outfit.id,
+          generatedImageUrl: imageUrl,
+          generatedAt: DateTime.now(),
+        );
       }
 
-      imageBytes ??= response.inlineDataParts.isNotEmpty
-          ? response.inlineDataParts.first.bytes
-          : null;
-
-      if (imageBytes == null) return null;
-
-      return await _storageService.uploadOutfitTryOn(
-        userId: userId,
-        bytes: imageBytes,
-      );
+      throw Exception('Gateway response did not contain an image URL');
     } catch (e) {
-      debugPrint('❌ Error extracting try-on image: $e');
-      return null;
+      debugPrint('❌ [VirtualTryOnService] Try-on generation failed: $e');
+      throw Exception('Failed to generate try-on image: $e');
     }
   }
 }

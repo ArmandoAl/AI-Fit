@@ -8,5 +8,11 @@
     "**/build/**": true,
     "**/ios/build/**": true
   },
-  "dart.flutterSdkPath": ".fvm/versions/3.47.1"
+  "dart.flutterSdkPath": ".fvm/versions/3.47.1",
+  "deno.enable": true,
+  "deno.enablePaths": [
+    "supabase/functions"
+  ],
+  "deno.lint": true,
+  "deno.unstable": true
 }

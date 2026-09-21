@@ -45,6 +45,48 @@ class IdentityPhotoCollage {
     );
   }
 
+  /// Composición canónica de Identity Board de 1024x1024 px.
+  /// Contiene la foto de cuerpo completo en la mitad izquierda (512x1024)
+  /// y las fotos faciales en la mitad derecha (2 cuadrantes de 512x512).
+  static Future<Uint8List> buildIdentityBoard({
+    required List<Uint8List> facePhotos,
+    required List<Uint8List> bodyPhotos,
+  }) async {
+    final allAvailable = [...bodyPhotos, ...facePhotos];
+    if (allAvailable.isEmpty) {
+      throw ArgumentError('At least one photo required to build identity board');
+    }
+
+    const boardWidth = 1024;
+    const boardHeight = 1024;
+    final canvas = img.Image(width: boardWidth, height: boardHeight);
+    img.fill(canvas, color: _background);
+
+    final primaryBody = bodyPhotos.firstOrNull ?? facePhotos.first;
+    final primaryFace = facePhotos.firstOrNull ?? bodyPhotos.first;
+    final secondaryFace = (facePhotos.length > 1
+        ? facePhotos[1]
+        : (bodyPhotos.length > 1 ? bodyPhotos[1] : primaryFace));
+
+    // 1. Mitad izquierda: Cuerpo completo (512 x 1024)
+    final bodyBox = _fitToBox(primaryBody, 512, 1024);
+    img.compositeImage(canvas, bodyBox, dstX: 0, dstY: 0);
+
+    // 2. Mitad derecha superior: Rostro principal (512 x 512)
+    final faceBox1 = _fitToBox(primaryFace, 512, 512);
+    img.compositeImage(canvas, faceBox1, dstX: 512, dstY: 0);
+
+    // 3. Mitad derecha inferior: Rostro secundario / Ángulo complementario (512 x 512)
+    final faceBox2 = _fitToBox(secondaryFace, 512, 512);
+    img.compositeImage(canvas, faceBox2, dstX: 512, dstY: 512);
+
+    final encoded = Uint8List.fromList(
+      img.encodeJpg(canvas, quality: identityJpegQuality),
+    );
+
+    return encoded;
+  }
+
   static Future<Uint8List> buildFromSources(List<AppImage> sources) async {
     if (sources.isEmpty) {
       throw ArgumentError('At least one photo required for collage');
@@ -90,6 +132,33 @@ class IdentityPhotoCollage {
     final offsetY = (rowHeight - resized.height) ~/ 2;
     img.compositeImage(row, resized, dstX: offsetX, dstY: offsetY);
     return row;
+  }
+
+  static img.Image _fitToBox(Uint8List bytes, int targetW, int targetH) {
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) {
+      throw Exception('Could not decode image bytes for identity board');
+    }
+
+    final padW = targetW > 32 ? targetW - 16 : targetW;
+    final padH = targetH > 32 ? targetH - 16 : targetH;
+
+    final scaleW = padW / decoded.width;
+    final scaleH = padH / decoded.height;
+    final factor = scaleW < scaleH ? scaleW : scaleH;
+
+    final resized = img.copyResize(
+      decoded,
+      width: (decoded.width * factor).round().clamp(1, padW),
+      height: (decoded.height * factor).round().clamp(1, padH),
+    );
+
+    final box = img.Image(width: targetW, height: targetH);
+    img.fill(box, color: _background);
+    final offsetX = (targetW - resized.width) ~/ 2;
+    final offsetY = (targetH - resized.height) ~/ 2;
+    img.compositeImage(box, resized, dstX: offsetX, dstY: offsetY);
+    return box;
   }
 }
 

@@ -1,40 +1,102 @@
-import 'package:firebase_ai/firebase_ai.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/identity_consistency_prompt.dart';
 import '../../../core/platform/network_image_loader.dart';
-import '../../../core/services/firestore_service.dart';
+import '../../../core/services/deepseek_service.dart';
 import '../../../core/services/storage_service.dart';
+import '../../../core/services/supabase_client.dart';
 import '../../../core/utils/identity_photo_collage.dart';
-import '../../../core/utils/image_compression_util.dart';
 import '../../profile/domain/user_identity_profile.dart';
 import '../../profile/services/user_identity_analysis_service.dart';
 
 class UserBaseImageService {
-  final FirebaseFirestore _firestore = FirestoreService.instance;
-  final StorageService _storageService = StorageService();
-  final Dio _dio = Dio();
-  final UserIdentityAnalysisService _identityService =
-      UserIdentityAnalysisService();
+  final StorageService _storageService;
+  final UserIdentityAnalysisService _identityService;
+  final DeepSeekService _gateway;
+  final Dio _dio;
+
+  UserBaseImageService({
+    StorageService? storageService,
+    UserIdentityAnalysisService? identityService,
+    DeepSeekService? gatewayClient,
+    Dio? dio,
+  })  : _storageService = storageService ?? StorageService(),
+        _identityService = identityService ?? UserIdentityAnalysisService(),
+        _gateway = gatewayClient ?? const DeepSeekService(),
+        _dio = dio ?? Dio();
+
+  /// Comprueba si la URL apunta a una imagen corrupta (< 1 KB) o placeholder stub (149 bytes o 1x1).
+  Future<bool> isBaseImageCorrupt(String url) async {
+    if (url.isEmpty || url.startsWith('mock://')) return true;
+    try {
+      final response = await _dio.get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: {'Range': 'bytes=0-2048'},
+          validateStatus: (status) => status != null && status < 400,
+        ),
+      );
+      final data = response.data;
+      if (data == null || data.isEmpty) return true;
+
+      // Si la carga útil recibida tiene menos de 1024 bytes (1 KB)
+      if (data.length < 1024) {
+        debugPrint('⚠️ [UserBaseImageService] Image size is ${data.length} bytes (< 1 KB). Flagged as corrupt.');
+        return true;
+      }
+
+      // Comprobar Content-Length si está disponible
+      final contentLengthStr = response.headers.value('content-length');
+      if (contentLengthStr != null) {
+        final totalLength = int.tryParse(contentLengthStr);
+        if (totalLength != null && totalLength < 1024) {
+          debugPrint('⚠️ [UserBaseImageService] Content-Length is $totalLength bytes (< 1 KB). Flagged as corrupt.');
+          return true;
+        }
+      }
+
+      // Comprobar Content-Range si está disponible (ej. "bytes 0-148/149")
+      final contentRange = response.headers.value('content-range');
+      if (contentRange != null && contentRange.contains('/')) {
+        final totalStr = contentRange.split('/').last.trim();
+        final totalLength = int.tryParse(totalStr);
+        if (totalLength != null && totalLength < 1024) {
+          debugPrint('⚠️ [UserBaseImageService] Content-Range total is $totalLength bytes (< 1 KB). Flagged as corrupt.');
+          return true;
+        }
+      }
+
+      // Si es un stub de 149 bytes (1x1 JPEG)
+      if (data.length <= 149) {
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('⚠️ [UserBaseImageService] Error checking image integrity ($url): $e');
+      return false;
+    }
+  }
 
   Future<String> generateUserBaseImage({
     required String userId,
     required List<String> bodyPhotoUrls,
     required List<String> facePhotoUrls,
   }) async {
-    try {
-      debugPrint('🎨 Generating user base image for user: $userId');
+    if (!AppSupabaseClient.isInitialized || AppSupabaseClient.client == null) {
+      throw Exception('Supabase client is not initialized');
+    }
 
+    try {
+      debugPrint(
+        '🌐 [UserBaseImageService] Routing base image generation...',
+      );
       final existingBaseImage = await _getExistingBaseImage(userId);
-      if (existingBaseImage != null) {
+      if (existingBaseImage != null && existingBaseImage.isNotEmpty) {
         debugPrint('✅ User base image already exists: $existingBaseImage');
         return existingBaseImage;
-      }
-
-      if (bodyPhotoUrls.isEmpty && facePhotoUrls.isEmpty) {
-        throw Exception('No photos available to generate base image');
       }
 
       var identityProfile = await _loadIdentityProfile(userId);
@@ -49,129 +111,159 @@ class UserBaseImageService {
         collageUrl = await _getIdentityCollageUrl(userId);
       }
 
-      final collageBytes = await _resolveCollageBytes(
-        collageUrl: collageUrl,
-        facePhotoUrls: facePhotoUrls,
-        bodyPhotoUrls: bodyPhotoUrls,
-      );
-
-      final identityPayload = await ImageCompressionUtil.compressIdentityBytes(
-        collageBytes,
-      );
+      final effectiveIdentityUrl = collageUrl ??
+          facePhotoUrls.firstOrNull ??
+          bodyPhotoUrls.firstOrNull ??
+          '';
 
       final prompt = _buildBaseImagePrompt(identityProfile);
+      final idempotencyKey = 'base_image_$userId';
 
-      final model = FirebaseAI.vertexAI().generativeModel(
-        model: 'gemini-2.5-flash-image',
-        generationConfig: GenerationConfig(
-          responseModalities: [ResponseModalities.image],
-          candidateCount: 1,
-        ),
-        safetySettings: [
-          SafetySetting(
-            HarmCategory.sexuallyExplicit,
-            HarmBlockThreshold.none,
-            HarmBlockMethod.severity,
-          ),
-          SafetySetting(
-            HarmCategory.harassment,
-            HarmBlockThreshold.none,
-            HarmBlockMethod.severity,
-          ),
-          SafetySetting(
-            HarmCategory.dangerousContent,
-            HarmBlockThreshold.none,
-            HarmBlockMethod.severity,
-          ),
-          SafetySetting(
-            HarmCategory.hateSpeech,
-            HarmBlockThreshold.none,
-            HarmBlockMethod.severity,
-          ),
-        ],
-      );
+      // 1. Intentar generación server-side por IA si hay gateway
+      try {
+        debugPrint('🌐 [UserBaseImageService] Attempting server-side base image generation via ai-router...');
+        final res = await _gateway.generateBaseImage(
+          identityImageUrl: effectiveIdentityUrl,
+          prompt: prompt,
+          idempotencyKey: idempotencyKey,
+        );
 
-      final response = await model.generateContent([
-        Content.multi([
-          InlineDataPart('image/jpeg', identityPayload),
-          TextPart(prompt),
-        ]),
-      ]);
-
-      final imageBytes = _extractImageBytes(response);
-      final imageUrl = await _storageService.uploadUserBaseImage(
-        userId: userId,
-        bytes: imageBytes,
-      );
-
-      await _saveBaseImageUrlToFirestore(userId, imageUrl);
-
-      debugPrint('✅ User base image successfully created: $imageUrl');
-      return imageUrl;
-    } catch (e) {
-      if (e is FirebaseAIException) {
-        throw Exception('AI Error: ${e.message}');
+        final imageUrl = res['imageUrl']?.toString();
+        if (imageUrl != null && imageUrl.isNotEmpty) {
+          final isCorrupt = await isBaseImageCorrupt(imageUrl);
+          if (!isCorrupt) {
+            await _saveBaseImageUrl(userId, imageUrl, isAiMannequin: true);
+            debugPrint('✅ [UserBaseImageService] Server-side base image created: $imageUrl');
+            return imageUrl;
+          } else {
+            debugPrint('⚠️ [UserBaseImageService] Gateway returned corrupt image (< 1KB). Falling back to local identity board...');
+          }
+        }
+      } catch (aiErr) {
+        debugPrint('⚠️ [UserBaseImageService] Server AI generation failed: $aiErr. Falling back to robust local identity board composition...');
       }
-      throw Exception('Failed to generate user base image: $e');
+
+      // 2. Fallback Robusto: Composición Local de Identity Board (1024x1024, >50KB)
+      debugPrint('🎨 [UserBaseImageService] Composing robust local Identity Board (1024x1024)...');
+      final composedUrl = await _composeAndUploadLocalIdentityBoard(
+        userId: userId,
+        bodyPhotoUrls: bodyPhotoUrls,
+        facePhotoUrls: facePhotoUrls,
+      );
+
+      await _saveBaseImageUrl(userId, composedUrl, isAiMannequin: false);
+      debugPrint('✅ [UserBaseImageService] Robust local identity board created and saved: $composedUrl');
+      return composedUrl;
+    } catch (e) {
+      debugPrint('❌ [UserBaseImageService] Base image generation failed: $e');
+      throw Exception('Failed to generate base image: $e');
     }
   }
 
-  Future<Uint8List> _resolveCollageBytes({
-    required String? collageUrl,
-    required List<String> facePhotoUrls,
+  Future<String> _composeAndUploadLocalIdentityBoard({
+    required String userId,
     required List<String> bodyPhotoUrls,
+    required List<String> facePhotoUrls,
   }) async {
-    if (collageUrl != null && collageUrl.isNotEmpty) {
-      try {
-        return await NetworkImageLoader.downloadBytes(_dio, collageUrl);
-      } catch (e) {
-        debugPrint('⚠️ Could not download stored collage, rebuilding: $e');
-      }
+    final validFaceUrls = facePhotoUrls.where((u) => u.isNotEmpty && !u.startsWith('mock://')).toList();
+    final validBodyUrls = bodyPhotoUrls.where((u) => u.isNotEmpty && !u.startsWith('mock://')).toList();
+
+    final faceBytes = await _downloadPhotoBytes(validFaceUrls);
+    final bodyBytes = await _downloadPhotoBytes(validBodyUrls);
+
+    if (faceBytes.isEmpty && bodyBytes.isEmpty) {
+      throw Exception('Cannot compose identity board: No valid face or body photos could be loaded.');
     }
 
-    final faceBytes = <Uint8List>[];
-    final bodyBytes = <Uint8List>[];
-
-    for (final url in facePhotoUrls.take(4)) {
-      try {
-        faceBytes.add(await NetworkImageLoader.downloadBytes(_dio, url));
-      } catch (e) {
-        debugPrint('⚠️ Failed to download face photo: $e');
-      }
-    }
-    for (final url in bodyPhotoUrls.take(4)) {
-      try {
-        bodyBytes.add(await NetworkImageLoader.downloadBytes(_dio, url));
-      } catch (e) {
-        debugPrint('⚠️ Failed to download body photo: $e');
-      }
-    }
-
-    return IdentityPhotoCollage.buildVertical(
+    final boardBytes = await IdentityPhotoCollage.buildIdentityBoard(
       facePhotos: faceBytes,
       bodyPhotos: bodyBytes,
     );
+
+    if (boardBytes.lengthInBytes < StorageService.minGeneratedImageBytes) {
+      throw Exception(
+        'Composed identity board is below 50KB (${boardBytes.lengthInBytes} bytes). Composition failed.',
+      );
+    }
+
+    return await _storageService.uploadUserBaseImage(
+      userId: userId,
+      bytes: boardBytes,
+    );
+  }
+
+  Future<List<Uint8List>> _downloadPhotoBytes(List<String> urls) async {
+    final list = <Uint8List>[];
+    for (var i = 0; i < urls.length && i < 4; i++) {
+      try {
+        list.add(await NetworkImageLoader.downloadBytes(_dio, urls[i]));
+      } catch (e) {
+        debugPrint('⚠️ Failed to download photo for identity board: $e');
+      }
+    }
+    return list;
   }
 
   Future<String?> _getExistingBaseImage(String userId) async {
     try {
-      final doc = await _firestore.collection('users').doc(userId).get();
-      final url = doc.data()?['baseImageUrl'] as String?;
-      return (url != null && url.isNotEmpty) ? url : null;
-    } catch (_) {
+      if (!AppSupabaseClient.isInitialized || AppSupabaseClient.client == null) return null;
+      final res = await AppSupabaseClient.client!
+          .from('profiles')
+          .select('base_image_path')
+          .eq('id', userId)
+          .maybeSingle();
+      final url = res?['base_image_path'] as String?;
+      if (url == null || url.isEmpty) return null;
+
+      // Validar si la imagen existente es corrupta (< 1 KB)
+      final isCorrupt = await isBaseImageCorrupt(url);
+      if (isCorrupt) {
+        debugPrint('⚠️ [UserBaseImageService] Found corrupt base image ($url). Purging from profiles.');
+        await AppSupabaseClient.client!
+            .from('profiles')
+            .update({
+              'base_image_path': null,
+              'base_image_content_hash': null,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', userId);
+        return null;
+      }
+
+      return url;
+    } catch (e) {
+      debugPrint('⚠️ [UserBaseImageService] Error fetching existing base image: $e');
       return null;
     }
   }
 
   Future<String?> _getIdentityCollageUrl(String userId) async {
-    final doc = await _firestore.collection('users').doc(userId).get();
-    return doc.data()?['identityCollageUrl'] as String?;
+    try {
+      if (!AppSupabaseClient.isInitialized || AppSupabaseClient.client == null) return null;
+      final res = await AppSupabaseClient.client!
+          .from('profiles')
+          .select('identity_collage_path')
+          .eq('id', userId)
+          .maybeSingle();
+      return res?['identity_collage_path'] as String?;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<IdentityProfile?> _loadIdentityProfile(String userId) async {
     try {
-      final doc = await _firestore.collection('users').doc(userId).get();
-      return IdentityProfile.fromFirestoreUser(doc.data());
+      if (!AppSupabaseClient.isInitialized || AppSupabaseClient.client == null) return null;
+      final res = await AppSupabaseClient.client!
+          .from('profiles')
+          .select('identity_profile')
+          .eq('id', userId)
+          .maybeSingle();
+      final data = res?['identity_profile'];
+      if (data != null && data is Map) {
+        return IdentityProfile.fromJson(Map<String, dynamic>.from(data));
+      }
+      return null;
     } catch (e) {
       debugPrint('⚠️ Could not load identity profile: $e');
       return null;
@@ -216,30 +308,42 @@ Premium virtual try-on base template. Realistic, neutral, identity-accurate.
 """;
   }
 
-  Uint8List _extractImageBytes(GenerateContentResponse response) {
-    if (response.candidates.isNotEmpty) {
-      for (final part in response.candidates.first.content.parts) {
-        if (part is InlineDataPart && part.mimeType.startsWith('image/')) {
-          return part.bytes;
-        }
-      }
-    }
-
-    if (response.inlineDataParts.isNotEmpty) {
-      return response.inlineDataParts.first.bytes;
-    }
-
-    throw Exception('No image returned from base image generation');
+  Future<void> _saveBaseImageUrl(
+    String userId,
+    String imageUrl, {
+    bool isAiMannequin = true,
+  }) async {
+    if (!AppSupabaseClient.isInitialized || AppSupabaseClient.client == null) return;
+    await AppSupabaseClient.client!
+        .from('profiles')
+        .update({
+          'base_image_path': imageUrl,
+          'base_image_content_hash': isAiMannequin ? 'ai_mannequin' : 'collage_fallback',
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', userId);
   }
 
-  Future<void> _saveBaseImageUrlToFirestore(
-    String userId,
-    String imageUrl,
-  ) async {
-    await _firestore.collection('users').doc(userId).set({
-      'baseImageUrl': imageUrl,
-      'baseImageGeneratedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+  Future<bool> isBaseImageCollageFallback(String userId) async {
+    try {
+      if (!AppSupabaseClient.isInitialized || AppSupabaseClient.client == null) return false;
+      final res = await AppSupabaseClient.client!
+          .from('profiles')
+          .select('base_image_content_hash, base_image_path')
+          .eq('id', userId)
+          .maybeSingle();
+
+      final hash = res?['base_image_content_hash'] as String?;
+      if (hash != null) {
+        return hash == 'collage_fallback';
+      }
+
+      // Heurística defensiva por path si el hash no estuviera asignado previamente
+      final path = res?['base_image_path'] as String? ?? '';
+      return path.contains('base_image_') && !path.contains('/identity/base_');
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<String?> getUserBaseImageUrl(String userId) async {
@@ -248,22 +352,31 @@ Premium virtual try-on base template. Realistic, neutral, identity-accurate.
 
   Future<void> deleteUserBaseImage(String userId) async {
     try {
-      final doc = await _firestore.collection('users').doc(userId).get();
-      final existingUrl = doc.data()?['baseImageUrl'] as String?;
+      if (AppSupabaseClient.isInitialized && AppSupabaseClient.client != null) {
+        final res = await AppSupabaseClient.client!
+            .from('profiles')
+            .select('base_image_path')
+            .eq('id', userId)
+            .maybeSingle();
+        final existingUrl = res?['base_image_path'] as String?;
 
-      if (existingUrl != null && existingUrl.isNotEmpty) {
-        try {
-          await _storageService.deletePhoto(existingUrl);
-        } catch (e) {
-          debugPrint('⚠️ Could not delete base image from Storage: $e');
+        if (existingUrl != null && existingUrl.isNotEmpty) {
+          try {
+            await _storageService.deletePhoto(existingUrl);
+          } catch (e) {
+            debugPrint('⚠️ Could not delete base image from Storage: $e');
+          }
         }
-      }
 
-      await _firestore.collection('users').doc(userId).set({
-        'baseImageUrl': FieldValue.delete(),
-        'baseImageGeneratedAt': FieldValue.delete(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+        await AppSupabaseClient.client!
+            .from('profiles')
+            .update({
+              'base_image_path': null,
+              'base_image_content_hash': null,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', userId);
+      }
 
       debugPrint('✅ Base image deleted for user $userId');
     } catch (e) {

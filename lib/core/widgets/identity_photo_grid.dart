@@ -38,7 +38,11 @@ class IdentityPhotoGrid extends StatelessWidget {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: imageSourcePreview(photos[index], fit: BoxFit.cover),
+                child: imageSourcePreview(
+                  photos[index],
+                  fit: BoxFit.cover,
+                  cacheWidth: 400,
+                ),
               ),
               Positioned(
                 top: 4,

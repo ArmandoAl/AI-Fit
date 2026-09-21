@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "AI-Fit (Dev - iOS Simulator)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": [
+        "--dart-define=SUPABASE_URL=https://cictlfpnohrnvfchtroa.supabase.co",
+        "--dart-define=SUPABASE_ANON_KEY=TU_ANON_KEY_AQUI"
+      ]
+    },
+    {
+      "name": "AI-Fit (Dev - Android/Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": [
+        "--dart-define=SUPABASE_URL=https://cictlfpnohrnvfchtroa.supabase.co",
+        "--dart-define=SUPABASE_ANON_KEY=TU_ANON_KEY_AQUI"
+      ]
+    },
+    {
+      "name": "AI-Fit (Dev - File Defines env.json)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": [
+        "--dart-define-from-file=env.json"
+      ]
+    }
+  ]
+}

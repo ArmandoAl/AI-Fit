@@ -1,18 +1,18 @@
 import 'dart:convert';
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import '../../../api_keys.dart';
+import '../../../core/services/deepseek_service.dart';
 import '../../wardrobe/domain/wardrobe_palette.dart';
 import '../domain/stylist_chat_response.dart';
 import '../domain/stylist_intent_state.dart';
 
-/// GPT-4.1-mini — solo conversación e intent acumulado (sin lógica de app).
+/// Servicio de chat del estilista personal — enrutado server-side vía `ai-router` (DeepSeek).
 class StylistChatService {
-  final Dio _dio;
+  final DeepSeekService _gateway;
 
-  StylistChatService({Dio? dio}) : _dio = dio ?? Dio();
+  StylistChatService({DeepSeekService? gatewayClient})
+      : _gateway = gatewayClient ?? const DeepSeekService();
 
-  static const _model = 'gpt-4.1-mini';
+  static const _model = 'deepseek-chat';
 
   static String get _systemPrompt => '''
 You are OutfitAI — a premium personal fashion stylist.
@@ -69,10 +69,6 @@ LANGUAGE (critical):
     required StylistIntentState currentIntent,
     required List<MapEntry<String, String>> recentTurns,
   }) async {
-    if (openAiApiKey.isEmpty) {
-      throw Exception('OpenAI API key not configured');
-    }
-
     final historyText = recentTurns
         .map((e) => '${e.key}: ${e.value}')
         .join('\n');
@@ -88,36 +84,25 @@ USER_MESSAGE:
 $userMessage
 ''';
 
-    final response = await _dio.post(
-      'https://api.openai.com/v1/chat/completions',
-      options: Options(
-        headers: {
-          'Authorization': 'Bearer $openAiApiKey',
-          'Content-Type': 'application/json',
-        },
-        receiveTimeout: const Duration(seconds: 45),
-        sendTimeout: const Duration(seconds: 30),
-      ),
-      data: {
-        'model': _model,
-        'messages': [
-          {'role': 'system', 'content': _systemPrompt},
-          {'role': 'user', 'content': userPayload},
-        ],
-        'response_format': {'type': 'json_object'},
-        'temperature': 0.6,
-      },
-    );
+    try {
+      final json = await _gateway.chatJson(
+        systemPrompt: _systemPrompt,
+        userPrompt: userPayload,
+        model: _model,
+        temperature: 0.6,
+      );
 
-    final content =
-        response.data['choices']?[0]?['message']?['content'] as String?;
-    if (content == null || content.isEmpty) {
-      throw Exception('Empty OpenAI response');
+      debugPrint('✅ Stylist chat response received: ready=${json['readyToGenerate']}');
+      return StylistChatResponse.fromJson(json);
+    } catch (e) {
+      debugPrint('⚠️ Stylist chat gateway error ($e), executing graceful fallback...');
+      return StylistChatResponse(
+        assistantMessage:
+            '¡Excelente! Cuéntame más sobre la ocasión o el estilo que buscas para armar tu outfit ideal.',
+        intentState: currentIntent,
+        readyToGenerate: currentIntent.hasMinimumContext,
+      );
     }
-
-    final clean = content.replaceAll('```json', '').replaceAll('```', '').trim();
-    final json = jsonDecode(clean) as Map<String, dynamic>;
-    debugPrint('✅ Stylist chat response: ready=${json['readyToGenerate']}');
-    return StylistChatResponse.fromJson(json);
   }
 }
+

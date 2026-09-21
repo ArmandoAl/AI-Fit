@@ -7,6 +7,7 @@ import '../../../../core/utils/keyboard_utils.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/widgets/app_page_app_bar.dart';
 import '../../../../core/widgets/atelier_section_header.dart';
+import '../../../../core/widgets/cold_start_loader.dart';
 import '../bloc/outfit_generation_bloc.dart';
 import '../bloc/outfit_generation_event.dart';
 import '../bloc/outfit_generation_state.dart';
@@ -471,13 +472,8 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
         ),
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 12),
-            Text('Generando vista try-on…'),
-          ],
+        child: const Center(
+          child: ColdStartProgressIndicator(),
         ),
       );
     }

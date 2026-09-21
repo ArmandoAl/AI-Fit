@@ -1,7 +1,6 @@
-/// Modelo de datos para outfits guardados en Firestore
+/// Modelo de datos para outfits guardados
 library;
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'outfit_models.dart';
 
 /// Outfit guardado con metadata y etiquetas para organización
@@ -58,7 +57,7 @@ class SavedOutfit {
     this.notes,
   });
 
-  /// Try-on guardado solo en Storage (antes de Firestore o si falló el guardado).
+  /// Try-on guardado solo en Storage (antes de DB o si falló el guardado).
   factory SavedOutfit.fromStorageTryOn({
     required String userId,
     required String tryOnImageUrl,
@@ -118,11 +117,10 @@ class SavedOutfit {
 
   /// Extrae colores del outfit si no hay preferredColors
   static List<String> _extractColorsFromOutfit(GeneratedOutfit outfit) {
-    // Por ahora retornar lista vacía, se puede mejorar extrayendo de metadata
     return [];
   }
 
-  /// Crea desde JSON de Firestore
+  /// Crea desde JSON
   factory SavedOutfit.fromJson(Map<String, dynamic> json) {
     return SavedOutfit(
       id: json['id'] ?? '',
@@ -150,12 +148,12 @@ class SavedOutfit {
       createdAt: json['createdAt'] != null
           ? (json['createdAt'] is DateTime
               ? json['createdAt'] as DateTime
-              : (json['createdAt'] as Timestamp).toDate())
+              : (DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()))
           : DateTime.now(),
       lastViewedAt: json['lastViewedAt'] != null
           ? (json['lastViewedAt'] is DateTime
               ? json['lastViewedAt'] as DateTime
-              : (json['lastViewedAt'] as Timestamp).toDate())
+              : DateTime.tryParse(json['lastViewedAt'].toString()))
           : null,
       viewCount: json['viewCount'] ?? 0,
       isFavorite: json['isFavorite'] ?? false,
@@ -166,7 +164,7 @@ class SavedOutfit {
     );
   }
 
-  /// Convierte a JSON para Firestore
+  /// Convierte a JSON estándar
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -183,9 +181,9 @@ class SavedOutfit {
       'compatibilityScore': compatibilityScore,
       'userPrompt': userPrompt,
       if (reasoning != null) 'reasoning': reasoning,
-      'createdAt': Timestamp.fromDate(createdAt),
+      'createdAt': createdAt.toIso8601String(),
       if (lastViewedAt != null)
-        'lastViewedAt': Timestamp.fromDate(lastViewedAt!),
+        'lastViewedAt': lastViewedAt!.toIso8601String(),
       'viewCount': viewCount,
       'isFavorite': isFavorite,
       'customTags': customTags,

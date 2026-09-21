@@ -1,10 +1,9 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
-import 'firebase_options.dart';
 import 'core/bootstrap/web_auth_bootstrap.dart';
+import 'core/services/supabase_client.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/app_router.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
@@ -20,7 +19,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   usePathUrlStrategy();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await AppSupabaseClient.initialize();
 
   final authRepository = AuthRepository();
   if (kIsWeb) {
@@ -64,7 +63,9 @@ class AIFitApp extends StatelessWidget {
           return MaterialApp.router(
             title: 'AIFit Atelier',
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme,
+            theme: AppTheme.darkTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: ThemeMode.dark,
             routerConfig: createRouter(context),
           );
         },

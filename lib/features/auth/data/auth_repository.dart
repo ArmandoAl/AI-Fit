@@ -1,19 +1,25 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:flutter/foundation.dart'
     show debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
-import '../../../core/services/firestore_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../core/services/supabase_client.dart';
 import '../domain/user_model.dart' as app_model;
 
+/// Repositorio de Autenticación migrado 100% a Supabase Auth.
+/// Erradica por completo las dependencias de FirebaseAuth y Firestore.
 class AuthRepository {
-  final FirebaseFirestore _firestore = FirestoreService.instance;
-  final fb_auth.FirebaseAuth _auth = fb_auth.FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   Future<void>? _googleInit;
 
   static const String _webClientId =
       '268248668862-f1fp960traqm1i0t6ir8sms4qt23339d.apps.googleusercontent.com';
+
+  SupabaseClient get _supabase {
+    final client = AppSupabaseClient.client;
+    if (client != null) return client;
+    return Supabase.instance.client;
+  }
 
   Future<void> _ensureGoogleInitialized() {
     return _googleInit ??= _googleSignIn.initialize(
@@ -21,94 +27,61 @@ class AuthRepository {
     );
   }
 
-  app_model.User? _toAppUser(fb_auth.User user) {
-    final name = (user.displayName?.trim().isNotEmpty ?? false)
-        ? user.displayName!.trim()
-        : (user.email?.trim().isNotEmpty ?? false)
-            ? user.email!.trim()
-            : 'User';
+  app_model.User? _toAppUser(User user) {
+    final meta = user.userMetadata ?? {};
+    final name = (meta['full_name']?.toString().trim().isNotEmpty ?? false)
+        ? meta['full_name'].toString().trim()
+        : (meta['name']?.toString().trim().isNotEmpty ?? false)
+            ? meta['name'].toString().trim()
+            : (user.email?.trim().isNotEmpty ?? false)
+                ? user.email!.trim()
+                : 'User';
+    final avatar = meta['avatar_url']?.toString() ??
+        meta['picture']?.toString() ??
+        '';
+
     return app_model.User(
-      id: user.uid,
+      id: user.id,
       name: name,
-      avatarUrl: user.photoURL ?? '',
+      avatarUrl: avatar,
       email: user.email,
     );
   }
 
   Stream<app_model.User?> get authStateChanges =>
-      _auth.authStateChanges().map((u) => u == null ? null : _toAppUser(u));
+      _supabase.auth.onAuthStateChange.map(
+        (data) => data.session?.user == null ? null : _toAppUser(data.session!.user),
+      );
 
   app_model.User? get currentUser {
-    final u = _auth.currentUser;
+    final u = _supabase.auth.currentUser;
     return u == null ? null : _toAppUser(u);
   }
 
-  /// URL de retorno tras [signInWithRedirect] (query o hash con apiKey/mode).
+  /// URL de retorno tras autenticación OAuth (hash con access_token o query con code).
   bool isWebAuthRedirectReturn(Uri uri) {
     if (!kIsWeb) return false;
-    if (uri.path.contains('__/auth')) return true;
-    if (uri.queryParameters.containsKey('apiKey')) return true;
-    if (uri.queryParameters.containsKey('mode')) return true;
-    return uri.fragment.contains('apiKey=') || uri.fragment.contains('mode=');
+    final frag = uri.fragment;
+    final query = uri.queryParameters;
+    return frag.contains('access_token=') ||
+        frag.contains('refresh_token=') ||
+        query.containsKey('code') ||
+        query.containsKey('error');
   }
 
-  /// Debe llamarse una sola vez en [main], antes de [runApp].
+  /// Inicializa y sincroniza la sesión web persistente desde Supabase Auth.
   Future<app_model.User?> bootstrapWebSession() async {
     if (!kIsWeb) return null;
 
     try {
-      await _auth.setPersistence(fb_auth.Persistence.LOCAL);
-    } catch (e) {
-      debugPrint('⚠️ setPersistence: $e');
-    }
-
-    final likelyReturn = isWebAuthRedirectReturn(Uri.base);
-
-    try {
-      final result = await _auth.getRedirectResult();
-      final user = result.user;
+      final user = _supabase.auth.currentUser;
       if (user != null) {
-        debugPrint('✅ bootstrap getRedirectResult: ${user.email}');
-        await _syncFirebaseUserToFirestore(user);
+        debugPrint('✅ [AuthRepository] bootstrap session found: ${user.email}');
+        await _syncUserToProfiles(user);
         return _toAppUser(user);
       }
-      final credential = result.credential;
-      if (credential != null && _auth.currentUser == null) {
-        final cred = await _auth.signInWithCredential(credential);
-        final signedIn = cred.user;
-        if (signedIn != null) {
-          debugPrint('✅ bootstrap signInWithCredential: ${signedIn.email}');
-          await _syncFirebaseUserToFirestore(signedIn);
-          return _toAppUser(signedIn);
-        }
-      }
-      debugPrint(
-        'ℹ️ bootstrap getRedirectResult: sin sesión (likelyReturn=$likelyReturn)',
-      );
-    } catch (e, st) {
-      debugPrint('❌ bootstrap getRedirectResult: $e\n$st');
-    }
-
-    final existing = _auth.currentUser;
-    if (existing != null) {
-      debugPrint('✅ bootstrap currentUser: ${existing.email}');
-      return _toAppUser(existing);
-    }
-
-    if (likelyReturn) {
-      try {
-        final user = await _auth
-            .authStateChanges()
-            .where((u) => u != null)
-            .map((u) => u!)
-            .first
-            .timeout(const Duration(seconds: 8));
-        debugPrint('✅ bootstrap authStateChanges: ${user.email}');
-        await _syncFirebaseUserToFirestore(user);
-        return _toAppUser(user);
-      } catch (e) {
-        debugPrint('⚠️ bootstrap espera authStateChanges: $e');
-      }
+    } catch (e) {
+      debugPrint('⚠️ [AuthRepository] bootstrap session error: $e');
     }
 
     return null;
@@ -116,31 +89,23 @@ class AuthRepository {
 
   Future<app_model.User?> signInWithGoogle() async {
     try {
-      debugPrint('🔐 Google Sign-In - Starting...');
+      debugPrint('🔐 Google Sign-In with Supabase Auth - Starting...');
       debugPrint('   kIsWeb: $kIsWeb');
       debugPrint('   Platform: ${defaultTargetPlatform.name}');
 
       if (kIsWeb) {
-        return await _signInWithGoogleWebPopup();
+        return await _signInWithGoogleWeb();
       }
 
-      final firebaseUser = await _signInWithGoogleNative();
-
-      try {
-        await _syncFirebaseUserToFirestore(firebaseUser);
-      } catch (e) {
-        debugPrint('⚠️ Firestore sync failed (non-critical): $e');
+      final user = await _signInWithGoogleNative();
+      if (user != null) {
+        await _syncUserToProfiles(user);
+        _logAuthenticatedUser(user);
+        return _toAppUser(user);
       }
-
-      _logAuthenticatedUser(firebaseUser);
-      return _toAppUser(firebaseUser);
-    } on fb_auth.FirebaseAuthException catch (e) {
-      if (e.code == 'popup-closed-by-user' ||
-          e.code == 'cancelled-popup-request') {
-        debugPrint('⚠️ Google Sign-In cancelled by user');
-        return null;
-      }
-      debugPrint('❌ Firebase Auth Error: ${e.code} - ${e.message}');
+      return null;
+    } on AuthException catch (e) {
+      debugPrint('❌ Supabase Auth Error: ${e.message}');
       throw Exception('Google Sign-In Error: ${e.message}');
     } on GoogleSignInException catch (e) {
       if (e.code == GoogleSignInExceptionCode.canceled) {
@@ -155,28 +120,24 @@ class AuthRepository {
     }
   }
 
-  /// Popup en web (COOP/COEP ya no bloquean el opener en hosting).
-  Future<app_model.User?> _signInWithGoogleWebPopup() async {
-    debugPrint('🌐 Using Firebase signInWithPopup (web)');
-    final provider = fb_auth.GoogleAuthProvider();
-    provider.setCustomParameters({'prompt': 'select_account'});
-    final userCredential = await _auth.signInWithPopup(provider);
-    final user = userCredential.user;
-    if (user == null) {
-      throw Exception('Google Sign-In: Firebase devolvió usuario nulo');
+  /// Flujo web mediante Supabase OAuth
+  Future<app_model.User?> _signInWithGoogleWeb() async {
+    debugPrint('🌐 Using Supabase signInWithOAuth (web)');
+    await _supabase.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: kIsWeb ? Uri.base.origin : null,
+    );
+    final user = _supabase.auth.currentUser;
+    if (user != null) {
+      await _syncUserToProfiles(user);
+      _logAuthenticatedUser(user);
+      return _toAppUser(user);
     }
-
-    try {
-      await _syncFirebaseUserToFirestore(user);
-    } catch (e) {
-      debugPrint('⚠️ Firestore sync failed (non-critical): $e');
-    }
-
-    _logAuthenticatedUser(user);
-    return _toAppUser(user);
+    return null;
   }
 
-  Future<fb_auth.User> _signInWithGoogleNative() async {
+  /// Flujo nativo móvil con GoogleSignIn + Supabase signInWithIdToken
+  Future<User?> _signInWithGoogleNative() async {
     await _ensureGoogleInitialized();
     debugPrint('✅ Google Sign-In initialized (native)');
 
@@ -188,58 +149,70 @@ class AuthRepository {
       throw Exception('Google Sign-In failed: missing idToken');
     }
 
-    final credential = fb_auth.GoogleAuthProvider.credential(
-      idToken: googleAuth.idToken,
+    final authResponse = await _supabase.auth.signInWithIdToken(
+      provider: OAuthProvider.google,
+      idToken: googleAuth.idToken!,
     );
 
-    final userCredential = await _auth.signInWithCredential(credential);
-    final user = userCredential.user;
-    if (user == null) {
-      throw Exception('FirebaseAuth returned null user');
-    }
-    return user;
+    return authResponse.user;
   }
 
-  void _logAuthenticatedUser(fb_auth.User firebaseUser) {
+  void _logAuthenticatedUser(User user) {
     debugPrint('═══════════════════════════════════════════════════');
-    debugPrint('✅ USUARIO AUTENTICADO CON GOOGLE');
-    debugPrint('   UID: ${firebaseUser.uid}');
-    debugPrint('   Email: ${firebaseUser.email ?? 'N/A'}');
+    debugPrint('✅ USUARIO AUTENTICADO EN SUPABASE AUTH');
+    debugPrint('   UID: ${user.id}');
+    debugPrint('   Email: ${user.email ?? 'N/A'}');
     debugPrint('═══════════════════════════════════════════════════');
   }
 
-  Future<void> _syncFirebaseUserToFirestore(fb_auth.User user) async {
-    final userRef = _firestore.collection('users').doc(user.uid);
-    final now = FieldValue.serverTimestamp();
+  /// Sincroniza el usuario autenticado con la tabla public.profiles.
+  /// Garantiza que el registro exista usando únicamente columnas estándar existentes:
+  /// id, updated_at, display_name y opcionalmente avatar_path.
+  Future<void> ensureProfileSynced(User user) async {
+    final meta = user.userMetadata ?? {};
+    final name = (meta['full_name']?.toString().trim().isNotEmpty ?? false)
+        ? meta['full_name'].toString().trim()
+        : (meta['name']?.toString().trim().isNotEmpty ?? false)
+            ? meta['name'].toString().trim()
+            : (user.email?.trim().isNotEmpty ?? false)
+                ? user.email!.trim()
+                : 'User';
+    final avatar = meta['avatar_url']?.toString() ??
+        meta['picture']?.toString() ??
+        '';
 
-    final doc = await userRef.get();
-    if (!doc.exists) {
-      await userRef.set({
-        'displayName': user.displayName ?? '',
-        'email': user.email ?? '',
-        'photoUrl': user.photoURL ?? '',
-        'createdAt': now,
-        'lastLogin': now,
-        'preferences': {'styleTags': [], 'temperatureSensitivity': 'medium'},
-        'bodyPhotos': [],
-        'facePhotos': [],
-        'onboardingCompleted': false,
-      });
-      return;
+    final payload = <String, dynamic>{
+      'id': user.id,
+      'display_name': name,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
+    if (avatar.isNotEmpty) {
+      payload['avatar_path'] = avatar;
     }
 
-    await userRef.set({
-      'displayName': user.displayName ?? '',
-      'email': user.email ?? '',
-      'photoUrl': user.photoURL ?? '',
-      'lastLogin': now,
-      'updatedAt': now,
-    }, SetOptions(merge: true));
+    try {
+      await _supabase.from('profiles').upsert(payload, onConflict: 'id');
+      debugPrint('✅ [AuthRepository] Profile synced to public.profiles for ${user.id}');
+    } catch (e) {
+      debugPrint('⚠️ [AuthRepository] Profiles sync failed with full payload ($e). Retrying with minimal payload...');
+      try {
+        await _supabase.from('profiles').upsert({
+          'id': user.id,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }, onConflict: 'id');
+        debugPrint('✅ [AuthRepository] Minimal profile synced to public.profiles for ${user.id}');
+      } catch (fallbackError) {
+        debugPrint('❌ [AuthRepository] Critical profiles sync failed: $fallbackError');
+        rethrow;
+      }
+    }
   }
+
+  Future<void> _syncUserToProfiles(User user) => ensureProfileSynced(user);
 
   Future<void> signOut() async {
-    debugPrint('🔓 Sign out');
-    await _auth.signOut();
+    debugPrint('🔓 Sign out from Supabase');
+    await _supabase.auth.signOut();
     if (kIsWeb) return;
 
     try {

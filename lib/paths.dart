@@ -21,5 +21,5 @@ export 'core/widgets/wearing_items_list.dart';
 export 'core/theme/app_colors.dart';
 export 'core/widgets/wardrobe_item_card.dart';
 export 'core/interfaces/ai_service.dart';
-export 'core/services/firebase_ai_service_impl.dart';
+export 'core/services/gateway_ai_service_impl.dart';
 export 'core/services/storage_service.dart';

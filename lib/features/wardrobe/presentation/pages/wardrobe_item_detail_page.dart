@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 import '../../../../core/platform/app_image.dart';
 import '../../../../core/platform/network_image_loader.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/services/firebase_ai_service_impl.dart';
+import '../../../../core/services/gateway_ai_service_impl.dart';
 import '../../domain/wardrobe_ai_metadata.dart';
 import '../../domain/wardrobe_analysis_prompt.dart';
 import '../../domain/wardrobe_item_model.dart';
@@ -30,7 +30,7 @@ class WardrobeItemDetailPage extends StatefulWidget {
 class _WardrobeItemDetailPageState extends State<WardrobeItemDetailPage> {
   final WardrobeRepositoryImpl _repository = WardrobeRepositoryImpl();
   final OutfitService _outfitService = OutfitService();
-  final FirebaseAIServiceImpl _aiService = FirebaseAIServiceImpl();
+  final GatewayAIServiceImpl _aiService = GatewayAIServiceImpl();
   final Dio _dio = Dio();
 
   late WardrobeItem _currentItem;
@@ -344,14 +344,60 @@ class _WardrobeItemDetailPageState extends State<WardrobeItemDetailPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Image Section
-            SizedBox(
-              height: 300,
+            Container(
+              height: 320,
               width: double.infinity,
-              child: AppNetworkImage(
-                imageUrl: _currentItem.imageUrl,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: 300,
+              color: (_currentItem.cutoutPath != null && _currentItem.cutoutPath!.isNotEmpty)
+                  ? Colors.white
+                  : AppColors.surfaceContainer,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  AppNetworkImage(
+                    imageUrl: _currentItem.displayImageUrl,
+                    fit: (_currentItem.cutoutPath != null && _currentItem.cutoutPath!.isNotEmpty)
+                        ? BoxFit.contain
+                        : BoxFit.cover,
+                    width: double.infinity,
+                    height: 320,
+                    placeholder: Container(
+                      color: Colors.white,
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.gold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_currentItem.cutoutPath != null && _currentItem.cutoutPath!.isNotEmpty)
+                    Positioned(
+                      bottom: 12,
+                      right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.auto_fix_high, size: 14, color: AppColors.gold),
+                            SizedBox(width: 5),
+                            Text(
+                              'Prenda aislada (IA)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
 

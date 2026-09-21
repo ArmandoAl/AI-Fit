@@ -1,15 +1,121 @@
 import 'package:flutter/foundation.dart';
+import '../../../core/services/deepseek_service.dart';
+import '../../../core/services/supabase_client.dart';
 import '../../wardrobe/domain/wardrobe_item_model.dart';
 import '../domain/outfit_models.dart';
 import 'wardrobe_metadata_scorer.dart';
 
 /// Algoritmo de búsqueda y filtrado de prendas
 ///
-/// Filtra el guardarropa del usuario basado en criterios de búsqueda
-/// y calcula compatibilidad entre prendas para optimizar resultados.
+/// Filtra el guardarropa del usuario combinando similitud semántica vectorial (pgvector)
+/// con reglas de compatibilidad de metadatos (colores, estilo, ocasión).
 class WardrobeSearchAlgorithm {
   static void _log(String message) {
     if (kDebugMode) debugPrint(message);
+  }
+
+  /// Tarea 3.3: Filtra prendas combinando búsqueda semántica vectorial (pgvector) y reglas de negocio.
+  /// Preselecciona los candidatos con mayor similitud semántica con respecto al prompt o intención
+  /// del usuario y aplica ranking determinista con fallback total si pgvector no está disponible.
+  static Future<FilteredWardrobe> filterWardrobeSemantic({
+    required List<WardrobeItem> allItems,
+    required OutfitIntent intent,
+    String? userPrompt,
+    DeepSeekService? gateway,
+  }) async {
+    _log('🔍 Semantic wardrobe filtering started. Items: ${allItems.length}');
+
+    if (AppSupabaseClient.isInitialized && AppSupabaseClient.client != null) {
+      final queryText = (userPrompt != null && userPrompt.trim().isNotEmpty)
+          ? userPrompt.trim()
+          : [
+              ...intent.styleTags,
+              if (intent.occasion != null) intent.occasion!,
+              ...intent.preferredColors,
+            ].join(' ').trim();
+
+      if (queryText.isNotEmpty) {
+        try {
+          final effectiveGateway = gateway ?? const DeepSeekService();
+          final matches = await effectiveGateway.matchWardrobe(
+            query: queryText,
+            matchCount: 20,
+            timeout: const Duration(seconds: 8),
+          );
+
+          if (matches.isNotEmpty) {
+            final similarityById = <String, double>{};
+            for (final m in matches) {
+              final id = m['id']?.toString();
+              final sim = (m['similarity'] as num?)?.toDouble() ?? 0.0;
+              if (id != null && id.isNotEmpty) {
+                similarityById[id] = sim;
+              }
+            }
+
+            _log('✨ pgvector matching returned ${similarityById.length} items for query "$queryText"');
+
+            return _filterAndRankWithVectorBoost(
+              allItems: allItems,
+              intent: intent,
+              vectorSimilarities: similarityById,
+            );
+          }
+        } catch (e) {
+          _log('⚠️ pgvector search unavailable ($e). Falling back to rule-based filtering.');
+        }
+      }
+    }
+
+    return filterWardrobe(allItems: allItems, intent: intent);
+  }
+
+  static FilteredWardrobe _filterAndRankWithVectorBoost({
+    required List<WardrobeItem> allItems,
+    required OutfitIntent intent,
+    required Map<String, double> vectorSimilarities,
+  }) {
+    final tops = allItems.where((item) => item.isTop).toList();
+    final bottoms = allItems.where((item) => item.isBottom).toList();
+    final shoes = allItems.where((item) => item.isShoes).toList();
+    final outerwear = allItems.where((item) => item.isOuterwear).toList();
+    final onePieces = allItems.where((item) => item.isOnePiece).toList();
+    final accessories = allItems.where((item) => item.isAccessory).toList();
+
+    List<WardrobeItem> rankWithBoost(List<WardrobeItem> items) {
+      if (items.isEmpty) return [];
+
+      final scoredItems = items.map((item) {
+        final baseScore = _calculateRelevanceScore(item, intent);
+        final vectorSim = vectorSimilarities[item.id] ?? 0.0;
+        // Vector similarity boost: suma ponderada (35% vector + 65% reglas de negocio)
+        final combinedScore = (baseScore * 0.65) + (vectorSim * 0.35);
+        return MapEntry(item, combinedScore);
+      }).toList();
+
+      final minScore = intent.preferredColors.isNotEmpty ? 0.35 : 0.25;
+      final filtered = scoredItems.where((entry) => entry.value >= minScore).toList();
+      filtered.sort((a, b) => b.value.compareTo(a.value));
+
+      return filtered.map((e) => e.key).toList();
+    }
+
+    final filteredTops = rankWithBoost(tops);
+    final filteredBottoms = rankWithBoost(bottoms);
+    final filteredShoes = rankWithBoost(shoes);
+    final filteredOuterwear = rankWithBoost(outerwear);
+    final filteredOnePieces = rankWithBoost(onePieces);
+    final filteredAccessories = rankWithBoost(accessories);
+
+    const maxItemsPerType = 10;
+    return FilteredWardrobe(
+      tops: filteredTops.take(maxItemsPerType).toList(),
+      bottoms: filteredBottoms.take(maxItemsPerType).toList(),
+      shoes: filteredShoes.take(maxItemsPerType).toList(),
+      outerwear: filteredOuterwear.take(maxItemsPerType).toList(),
+      onePieces: filteredOnePieces.take(maxItemsPerType).toList(),
+      accessories: filteredAccessories.take(maxItemsPerType).toList(),
+    );
   }
 
   /// Filtra prendas basado en intención del usuario
@@ -23,15 +129,16 @@ class WardrobeSearchAlgorithm {
     _log('   Total items: ${allItems.length}');
 
     // Separar por tipo
-    final tops = allItems.where((item) => item.type == 'top').toList();
-    final bottoms = allItems.where((item) => item.type == 'bottom').toList();
-    final shoes = allItems.where((item) => item.type == 'shoes').toList();
-    final outerwear = allItems
-        .where((item) => item.type == 'outerwear')
-        .toList();
+    final tops = allItems.where((item) => item.isTop).toList();
+    final bottoms = allItems.where((item) => item.isBottom).toList();
+    final shoes = allItems.where((item) => item.isShoes).toList();
+    final outerwear = allItems.where((item) => item.isOuterwear).toList();
+    final onePieces = allItems.where((item) => item.isOnePiece).toList();
+    final accessories = allItems.where((item) => item.isAccessory).toList();
 
     _log(
-      '   By type: ${tops.length} tops, ${bottoms.length} bottoms, ${shoes.length} shoes, ${outerwear.length} outerwear',
+      '   By type: ${tops.length} tops, ${bottoms.length} bottoms, ${shoes.length} shoes, '
+      '${outerwear.length} outerwear, ${onePieces.length} one_pieces, ${accessories.length} accessories',
     );
 
     // Filtrar y rankear cada tipo
@@ -39,8 +146,10 @@ class WardrobeSearchAlgorithm {
     final filteredBottoms = _filterAndRankItems(bottoms, intent);
     final filteredShoes = _filterAndRankItems(shoes, intent);
     final filteredOuterwear = _filterAndRankItems(outerwear, intent);
+    final filteredOnePieces = _filterAndRankItems(onePieces, intent);
+    final filteredAccessories = _filterAndRankItems(accessories, intent);
 
-    // Limitar a máximo 20-30 items por tipo para optimizar costos
+    // Limitar a máximo 10 items por tipo para optimizar costos
     final maxItemsPerType = 10;
 
     return FilteredWardrobe(
@@ -48,6 +157,8 @@ class WardrobeSearchAlgorithm {
       bottoms: filteredBottoms.take(maxItemsPerType).toList(),
       shoes: filteredShoes.take(maxItemsPerType).toList(),
       outerwear: filteredOuterwear.take(maxItemsPerType).toList(),
+      onePieces: filteredOnePieces.take(maxItemsPerType).toList(),
+      accessories: filteredAccessories.take(maxItemsPerType).toList(),
     );
   }
 
@@ -436,4 +547,149 @@ class WardrobeSearchAlgorithm {
 
     return 0.3; // Penalizar si no hay overlap de temporadas
   }
+
+  /// Genera outfits basados en reglas deterministas y scores de compatibilidad
+  /// cuando los servicios de IA remota no están disponibles.
+  /// Soporta looks con piezas únicas (one_piece) que reemplazan el par top+bottom,
+  /// y adjunta 1 o 2 accesorios al conjunto.
+  static List<GeneratedOutfit> generateRuleBasedOutfits({
+    required FilteredWardrobe wardrobe,
+    required OutfitIntent intent,
+  }) {
+    final tops = wardrobe.tops.take(4).toList();
+    final bottoms = wardrobe.bottoms.take(4).toList();
+    final shoes = wardrobe.shoes.take(4).toList();
+    final outerwear = wardrobe.outerwear.take(3).toList();
+    final onePieces = wardrobe.onePieces.take(3).toList();
+    final accessories = wardrobe.accessories.take(4).toList();
+
+    final hasTwoPiece = tops.isNotEmpty && bottoms.isNotEmpty && shoes.isNotEmpty;
+    final hasOnePiece = onePieces.isNotEmpty && shoes.isNotEmpty;
+
+    if (!hasTwoPiece && !hasOnePiece) {
+      return [];
+    }
+
+    final outfits = <GeneratedOutfit>[];
+    final occasionDesc = intent.occasion ?? 'la ocasión solicitada';
+
+    // Helper para adjuntar 1 o 2 accesorios
+    List<String> pickAccessories(int index) {
+      if (accessories.isEmpty) return [];
+      final acc1 = accessories[index % accessories.length];
+      final res = [acc1.id];
+      if (accessories.length > 1) {
+        final acc2 = accessories[(index + 1) % accessories.length];
+        if (acc2.id != acc1.id) {
+          res.add(acc2.id);
+        }
+      }
+      return res;
+    }
+
+    final promptText = intent.userPrompt?.toLowerCase() ?? '';
+    final mustInclude = intent.constraints?['mustInclude']?.toString().toLowerCase() ?? '';
+    final preferOnePiece = promptText.contains('vestido') ||
+        promptText.contains('dress') ||
+        promptText.contains('enterizo') ||
+        promptText.contains('jumpsuit') ||
+        mustInclude.contains('vestido') ||
+        mustInclude.contains('dress') ||
+        !hasTwoPiece;
+
+    const targetOutfits = 3;
+    for (int i = 0; i < targetOutfits; i++) {
+      final useOnePiece = hasOnePiece &&
+          (preferOnePiece || (!hasTwoPiece) || (i == 1 && hasOnePiece));
+
+      if (useOnePiece) {
+        final onePiece = onePieces[i % onePieces.length];
+        final shoe = shoes[i % shoes.length];
+        final coat = outerwear.isNotEmpty && i % 2 == 1
+            ? outerwear[i % outerwear.length]
+            : null;
+        final outfitAccIds = pickAccessories(i);
+
+        final compatPieceShoe = calculateCompatibility(onePiece, shoe);
+        final matchPct = (compatPieceShoe * 100).round().clamp(78, 98);
+
+        final pieceLabel = onePiece.subType.isNotEmpty ? onePiece.subType : onePiece.name;
+        final shoeLabel = shoe.subType.isNotEmpty ? shoe.subType : shoe.name;
+        final accNotice = outfitAccIds.isNotEmpty ? ' con accesorios coordinados' : '';
+
+        final explanationEs =
+            'Look completo con pieza única: combina $pieceLabel y $shoeLabel$accNotice, optimizado para $occasionDesc.';
+        final explanationEn =
+            'One-piece ensemble matching $pieceLabel and $shoeLabel for $occasionDesc.';
+
+        outfits.add(
+          GeneratedOutfit(
+            id: 'rule_outfit_${i + 1}',
+            onePieceId: onePiece.id,
+            shoesId: shoe.id,
+            outerwearId: coat?.id,
+            accessoryIds: outfitAccIds,
+            matchPercentage: matchPct,
+            compatibilityScore: double.parse(compatPieceShoe.toStringAsFixed(2)),
+            explanation: explanationEn,
+            explanationEs: explanationEs,
+            metadata: {
+              'rule_based': true,
+              'one_piece_name': onePiece.name,
+              'shoes_name': shoe.name,
+              'accessory_count': outfitAccIds.length,
+            },
+          ),
+        );
+      } else if (hasTwoPiece) {
+        final top = tops[i % tops.length];
+        final bottom = bottoms[i % bottoms.length];
+        final shoe = shoes[i % shoes.length];
+        final coat = outerwear.isNotEmpty && i % 2 == 1
+            ? outerwear[i % outerwear.length]
+            : null;
+        final outfitAccIds = pickAccessories(i);
+
+        final compatTopBottom = calculateCompatibility(top, bottom);
+        final compatBottomShoe = calculateCompatibility(bottom, shoe);
+        final avgCompat = (compatTopBottom + compatBottomShoe) / 2.0;
+        final matchPct = (avgCompat * 100).round().clamp(75, 98);
+
+        final topLabel = top.subType.isNotEmpty ? top.subType : top.name;
+        final bottomLabel = bottom.subType.isNotEmpty ? bottom.subType : bottom.name;
+        final shoeLabel = shoe.subType.isNotEmpty ? shoe.subType : shoe.name;
+        final accNotice = outfitAccIds.isNotEmpty ? ' complementado con accesorios a tono' : '';
+
+        final explanationEs =
+            'Look equilibrado que combina $topLabel con $bottomLabel y $shoeLabel$accNotice, optimizado para $occasionDesc.';
+        final explanationEn =
+            'Coordinated ensemble matching $topLabel with $bottomLabel and $shoeLabel for $occasionDesc.';
+
+        outfits.add(
+          GeneratedOutfit(
+            id: 'rule_outfit_${i + 1}',
+            topId: top.id,
+            bottomId: bottom.id,
+            shoesId: shoe.id,
+            outerwearId: coat?.id,
+            accessoryIds: outfitAccIds,
+            matchPercentage: matchPct,
+            compatibilityScore: double.parse(avgCompat.toStringAsFixed(2)),
+            explanation: explanationEn,
+            explanationEs: explanationEs,
+            metadata: {
+              'rule_based': true,
+              'top_name': top.name,
+              'bottom_name': bottom.name,
+              'shoes_name': shoe.name,
+              'accessory_count': outfitAccIds.length,
+            },
+          ),
+        );
+      }
+    }
+
+    return outfits;
+  }
 }
+

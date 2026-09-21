@@ -113,8 +113,58 @@ class WardrobePalette {
   static const Map<String, String> typeLabelsEs = {
     'top': 'Superior',
     'bottom': 'Inferior',
+    'one_piece': 'Pieza Única',
+    'one-piece': 'Pieza Única',
     'shoes': 'Calzado',
     'outerwear': 'Abrigo',
+    'accessories': 'Accesorios',
+    'accessory': 'Accesorios',
+  };
+
+  static const Map<String, String> subtypeLabelsEs = {
+    // one_piece
+    'dress': 'Vestido',
+    'jumpsuit': 'Enterizo',
+    'romper': 'Romper',
+    'vestido': 'Vestido',
+    'enterizo': 'Enterizo',
+    // accessories
+    'scarf': 'Bufanda',
+    'earrings': 'Aretes / Joyas',
+    'necklace': 'Collar',
+    'bag': 'Bolso',
+    'belt': 'Cinturón',
+    'bufanda': 'Bufanda',
+    'aretes': 'Aretes / Joyas',
+    'collar': 'Collar',
+    'bolso': 'Bolso',
+    'cinturon': 'Cinturón',
+    // tops
+    't-shirt': 'Camiseta',
+    'shirt': 'Camisa',
+    'sweater': 'Suéter',
+    'hoodie': 'Sudadera',
+    'tank-top': 'Sin mangas',
+    'blouse': 'Blusa',
+    // bottoms
+    'jeans': 'Jeans',
+    'pants': 'Pantalones',
+    'shorts': 'Shorts',
+    'skirt': 'Falda',
+    'chinos': 'Chinos',
+    'sweatpants': 'Pantalón deportivo',
+    // shoes
+    'sneakers': 'Zapatillas / Tenis',
+    'boots': 'Botas',
+    'sandals': 'Sandalias',
+    'dress-shoes': 'Zapatos formales',
+    'sports-shoes': 'Calzado deportivo',
+    // outerwear
+    'jacket': 'Chaqueta',
+    'coat': 'Abrigo',
+    'blazer': 'Blazer',
+    'cardigan': 'Cárdigan',
+    'vest': 'Chaleco',
   };
 
   static const Map<String, String> occasionLabelsEs = {
@@ -195,11 +245,25 @@ class WardrobePalette {
   static String labelType(String slug) =>
       typeLabelsEs[slug] ?? _titleCase(slug);
 
+  static String labelSubtype(String slug) =>
+      subtypeLabelsEs[slug.toLowerCase()] ?? _titleCase(slug);
+
   static String labelOccasion(String slug) =>
       occasionLabelsEs[slug] ?? _titleCase(slug);
 
   static String labelWeather(String slug) =>
       weatherLabelsEs[slug] ?? _titleCase(slug);
+
+  static String normalizeType(String raw) {
+    final key = raw.trim().toLowerCase().replaceAll('-', '_');
+    if (key == 'dress' || key == 'vestido' || key == 'jumpsuit' || key == 'enterizo' || key == 'one_piece') {
+      return 'one_piece';
+    }
+    if (key == 'accessory' || key == 'accessories' || key == 'accesorio' || key == 'accesorios') {
+      return 'accessories';
+    }
+    return key;
+  }
 
   static String _titleCase(String slug) {
     if (slug.isEmpty) return slug;

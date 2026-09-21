@@ -50,24 +50,31 @@ class WardrobeItemCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    AppNetworkImage(
-                      imageUrl: item.imageUrl,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      placeholder: Container(
-                        color: AppColors.surfaceContainer,
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.gold,
+                    Container(
+                      color: (item.cutoutPath != null && item.cutoutPath!.isNotEmpty)
+                          ? Colors.white
+                          : AppColors.surfaceContainer,
+                      child: AppNetworkImage(
+                        imageUrl: item.displayImageUrl,
+                        fit: (item.cutoutPath != null && item.cutoutPath!.isNotEmpty)
+                            ? BoxFit.contain
+                            : BoxFit.cover,
+                        width: double.infinity,
+                        placeholder: Container(
+                          color: Colors.white,
+                          child: const Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.gold,
+                            ),
                           ),
                         ),
-                      ),
-                      errorWidget: Container(
-                        color: AppColors.surfaceContainer,
-                        child: const Icon(
-                          Icons.image_not_supported_outlined,
-                          color: AppColors.tertiary,
+                        errorWidget: Container(
+                          color: AppColors.surfaceContainer,
+                          child: const Icon(
+                            Icons.image_not_supported_outlined,
+                            color: AppColors.tertiary,
+                          ),
                         ),
                       ),
                     ),
@@ -90,6 +97,29 @@ class WardrobeItemCard extends StatelessWidget {
                               color: AppColors.primary,
                               letterSpacing: 1.2,
                             ),
+                          ),
+                        ),
+                      ),
+                    if (item.cutoutPath != null && item.cutoutPath!.isNotEmpty)
+                      Positioned(
+                        top: 10,
+                        right: 10,
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface.withValues(alpha: 0.92),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.auto_fix_high,
+                            size: 14,
+                            color: AppColors.gold,
                           ),
                         ),
                       ),

@@ -52,7 +52,7 @@ class WardrobeBloc extends Bloc<WardrobeEvent, WardrobeState> {
       } else {
         final filtered = currentState.allItems
             .where(
-              (item) => item.type.toLowerCase() == event.category.toLowerCase(),
+              (item) => item.matchesCategory(event.category),
             )
             .toList();
         emit(
@@ -84,8 +84,7 @@ class WardrobeBloc extends Bloc<WardrobeEvent, WardrobeState> {
       if (selectedCategory != 'All') {
         filteredItems = items
             .where(
-              (item) =>
-                  item.type.toLowerCase() == selectedCategory.toLowerCase(),
+              (item) => item.matchesCategory(selectedCategory),
             )
             .toList();
       }

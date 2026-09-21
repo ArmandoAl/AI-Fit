@@ -1,32 +1,35 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/interfaces/ai_service.dart';
 import '../../../core/platform/app_image.dart';
 import '../../../core/platform/network_image_loader.dart';
-import '../../../core/services/firebase_ai_service_impl.dart';
-import '../../../core/services/firestore_service.dart';
+import '../../../core/services/gateway_ai_service_impl.dart';
+import '../../../core/services/storage_service.dart';
+import '../../../core/services/supabase_client.dart';
 import '../../../core/utils/identity_photo_collage.dart';
 import '../../../core/utils/image_compression_util.dart';
 import '../domain/user_identity_profile.dart';
 
 class UserIdentityAnalysisService {
   final AIService _aiService;
-  final FirebaseFirestore _firestore;
-  final FirebaseStorage _storage;
+  final StorageService _storageService;
   final Dio _dio;
 
   UserIdentityAnalysisService({
     AIService? aiService,
-    FirebaseFirestore? firestore,
-    FirebaseStorage? storage,
+    StorageService? storageService,
     Dio? dio,
-  })  : _aiService = aiService ?? FirebaseAIServiceImpl(),
-        _firestore = firestore ?? FirestoreService.instance,
-        _storage = storage ?? FirebaseStorage.instance,
+  })  : _aiService = aiService ?? GatewayAIServiceImpl(),
+        _storageService = storageService ?? StorageService(),
         _dio = dio ?? Dio();
+
+  SupabaseClient get _supabase {
+    final client = AppSupabaseClient.client;
+    if (client != null) return client;
+    return Supabase.instance.client;
+  }
 
   static const _identityAnalysisPrompt = '''
 You are a professional biometric and body-proportion analyst for fashion virtual try-on.
@@ -80,16 +83,15 @@ Rules: concise, deterministic, infer ethnicity consistency from visible features
         return null;
       }
 
-      await _firestore.collection('users').doc(userId).set({
-        'identityProfile': profile.toJson(),
-        'identityVersion':
+      await _supabase.from('profiles').update({
+        'identity_profile': profile.toJson(),
+        'identity_version':
             profile.identityVersion ?? IdentityProfile.currentVersion,
-        'identityCollageUrl': collageUrl,
-        'identityGeneratedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+        'identity_collage_path': collageUrl,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', userId);
 
-      debugPrint('✅ Identity profile v${profile.identityVersion} saved');
+      debugPrint('✅ Identity profile v${profile.identityVersion} saved to Supabase');
       return profile;
     } catch (e) {
       debugPrint('❌ analyzeUserIdentity failed: $e');
@@ -126,10 +128,9 @@ Rules: concise, deterministic, infer ethnicity consistency from visible features
   }
 
   Future<String> _uploadCollage(String userId, Uint8List bytes) async {
-    final path =
-        'users/$userId/identity_collage_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final ref = _storage.ref().child(path);
-    await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
-    return ref.getDownloadURL();
+    return _storageService.uploadIdentityCollage(
+      userId: userId,
+      bytes: bytes,
+    );
   }
 }

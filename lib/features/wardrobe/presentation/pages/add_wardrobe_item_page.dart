@@ -11,6 +11,7 @@ import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../data/wardrobe_repository_impl.dart';
 import '../bloc/wardrobe_bloc.dart';
 import '../bloc/wardrobe_event.dart';
+import '../widgets/category_selector.dart';
 
 class AddWardrobeItemPage extends StatefulWidget {
   final List<AppImage>? initialImages;
@@ -34,16 +35,30 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
   static const List<String> _clothingTypes = [
     'top',
     'bottom',
+    'one_piece',
     'shoes',
     'outerwear',
+    'accessories',
   ];
 
   // Sub-type options by main type
   static const Map<String, List<String>> _subTypes = {
     'top': ['t-shirt', 'shirt', 'sweater', 'hoodie', 'tank-top', 'blouse'],
     'bottom': ['jeans', 'pants', 'shorts', 'skirt', 'chinos', 'sweatpants'],
+    'one_piece': ['dress', 'jumpsuit', 'romper', 'vestido', 'enterizo'],
     'shoes': ['sneakers', 'boots', 'sandals', 'dress-shoes', 'sports-shoes'],
     'outerwear': ['jacket', 'coat', 'blazer', 'cardigan', 'vest'],
+    'accessories': [
+      'scarf',
+      'earrings',
+      'necklace',
+      'bag',
+      'belt',
+      'bufanda',
+      'aretes',
+      'collar',
+      'bolso',
+    ],
   };
 
   @override
@@ -67,7 +82,11 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
   }
 
   Future<void> _pickImages() async {
-    final List<XFile> images = await _picker.pickMultiImage(imageQuality: 85);
+    final List<XFile> images = await _picker.pickMultiImage(
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 85,
+    );
 
     if (images.isNotEmpty) {
       final sources = await AppImage.fromXFiles(images);
@@ -274,7 +293,11 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
             width: double.infinity,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: imageSourcePreview(_selectedImages[0], fit: BoxFit.cover),
+              child: imageSourcePreview(
+                _selectedImages[0],
+                fit: BoxFit.cover,
+                cacheWidth: 800,
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -286,39 +309,38 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
   }
 
   Widget _buildMultipleItemsForm() {
-    return SingleChildScrollView(
+    return ListView.separated(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          for (var index = 0; index < _selectedImages.length; index++) ...[
-            if (index > 0) const SizedBox(height: 16),
-            Card(
-              margin: EdgeInsets.zero,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: SizedBox(
-                        height: 200,
-                        width: double.infinity,
-                        child: imageSourcePreview(
-                          _selectedImages[index],
-                          fit: BoxFit.cover,
-                        ),
-                      ),
+      itemCount: _selectedImages.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemBuilder: (context, index) {
+        return Card(
+          key: ValueKey('wardrobe_item_card_$index'),
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    height: 200,
+                    width: double.infinity,
+                    child: imageSourcePreview(
+                      _selectedImages[index],
+                      fit: BoxFit.cover,
+                      cacheWidth: 600,
                     ),
-                    const SizedBox(height: 16),
-                    _buildItemForm(index, isCompact: true),
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 16),
+                _buildItemForm(index, isCompact: true),
+              ],
             ),
-          ],
-        ],
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -342,8 +364,22 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
           ),
           const SizedBox(height: 16),
         ],
+        // Category Selector Chips
+        CategorySelector(
+          selectedCategory: formData.type ?? '',
+          categories: _clothingTypes,
+          padding: EdgeInsets.zero,
+          onCategorySelected: (type) {
+            setState(() {
+              formData.type = type;
+              formData.subType = null;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
         // Type dropdown
         DropdownButtonFormField<String>(
+          key: ValueKey('type_${index}_${formData.type}'),
           initialValue: formData.type,
           decoration: const InputDecoration(
             labelText: AppStringsEs.typeRequired,
@@ -365,6 +401,7 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
         const SizedBox(height: 16),
         // Sub-type dropdown
         DropdownButtonFormField<String>(
+          key: ValueKey('subtype_${index}_${formData.type}_${formData.subType}'),
           initialValue: formData.subType,
           decoration: const InputDecoration(
             labelText: AppStringsEs.subTypeRequired,
@@ -373,7 +410,7 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
           items: subTypeOptions.map((subType) {
             return DropdownMenuItem(
               value: subType,
-              child: Text(subType[0].toUpperCase() + subType.substring(1)),
+              child: Text(WardrobePalette.labelSubtype(subType)),
             );
           }).toList(),
           onChanged: formData.type == null

@@ -1,10 +1,7 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_ai/firebase_ai.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import '../../../core/services/firestore_service.dart';
+import '../../../core/services/supabase_client.dart';
 import '../../wardrobe/data/wardrobe_repository_impl.dart';
 import '../../wardrobe/domain/wardrobe_item_model.dart';
 import '../../profile/data/profile_repository.dart';
@@ -22,8 +19,6 @@ import 'virtual_try_on_service.dart';
 /// Fases 1–3: intención → filtro → outfits (rápido, muestra UI).
 /// Fase 4: try-on bajo demanda o solo el primer look (P1 progresivo).
 class OutfitService {
-  final FirebaseFirestore _firestore = FirestoreService.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   final WardrobeRepositoryImpl _wardrobeRepository = WardrobeRepositoryImpl();
   final ProfileRepository _profileRepository = ProfileRepository();
   final OutfitIntentAnalyzer _intentAnalyzer = OutfitIntentAnalyzer();
@@ -35,25 +30,31 @@ class OutfitService {
   _UserTryOnContext? _cachedTryOnContext;
   String? _cachedTryOnUserId;
 
-  /// Fases 1–3: genera outfits; persistencia Firestore en segundo plano.
+  String? get _currentUserId =>
+      AppSupabaseClient.client?.auth.currentUser?.id;
+
+  /// Fases 1–3: genera outfits; persistencia Supabase en segundo plano.
   ///
   /// Si [precomputedIntent] viene del chat, se omite DeepSeek.
   Future<OutfitGenerationResult> generateOutfitSuggestions({
     required String userPrompt,
     OutfitIntent? precomputedIntent,
   }) async {
-    final uid = _auth.currentUser?.uid;
+    final uid = _currentUserId;
     if (uid == null) throw Exception('User not logged in');
 
     try {
       debugPrint('🚀 Outfit suggestions (phases 1–3)');
       debugPrint('   Prompt: "$userPrompt"');
 
-      final intent = precomputedIntent ??
+      final intent =
+          precomputedIntent ??
           await _intentAnalyzer.analyzeUserPrompt(userPrompt);
 
       if (precomputedIntent != null) {
-        debugPrint('✅ Using precomputed intent from stylist chat (DeepSeek skipped)');
+        debugPrint(
+          '✅ Using precomputed intent from stylist chat (DeepSeek skipped)',
+        );
       }
 
       final allItems = await _wardrobeRepository.getWardrobeItems();
@@ -64,28 +65,33 @@ class OutfitService {
 
       final wardrobeImageUrlsByItemId = _imageUrlsByItemId(allItems);
 
-      final filteredWardrobe = WardrobeSearchAlgorithm.filterWardrobe(
-        allItems: allItems,
-        intent: intent,
-      );
+      final filteredWardrobe =
+          await WardrobeSearchAlgorithm.filterWardrobeSemantic(
+            allItems: allItems,
+            intent: intent,
+            userPrompt: userPrompt,
+          );
 
       if (filteredWardrobe.isEmpty) {
         throw Exception('No items match your request. Try different criteria.');
       }
 
-      if (filteredWardrobe.tops.isEmpty ||
-          filteredWardrobe.bottoms.isEmpty ||
-          filteredWardrobe.shoes.isEmpty) {
+      final hasTwoPiece =
+          filteredWardrobe.tops.isNotEmpty && filteredWardrobe.bottoms.isNotEmpty;
+      final hasOnePiece = filteredWardrobe.onePieces.isNotEmpty;
+      final hasShoes = filteredWardrobe.shoes.isNotEmpty;
+
+      if ((!hasTwoPiece && !hasOnePiece) || !hasShoes) {
         final missing = <String>[
-          if (filteredWardrobe.tops.isEmpty) 'superior',
-          if (filteredWardrobe.bottoms.isEmpty) 'inferior (pantalón/falda)',
-          if (filteredWardrobe.shoes.isEmpty) 'calzado',
+          if (!hasTwoPiece && !hasOnePiece)
+            'prenda completa (superior e inferior, o pieza única/vestido)',
+          if (!hasShoes) 'calzado',
         ];
         throw Exception(
           'Con este pedido no hay suficientes prendas en el armario filtrado. '
-          'Falta: ${missing.join(', ')}. Por ejemplo pidiste negro pero quizá '
-          'no tienes pantalón/falda negro etiquetado, o el filtro lo excluyó. '
-          'Prueba otros colores, quita algún matiz o súbe más prendas.',
+          'Falta: ${missing.join(', ')}. Por ejemplo pediste negro pero quizá '
+          'no tienes esa combinación etiquetada, o el filtro lo excluyó. '
+          'Prueba otros colores, quita algún matiz o sube más prendas.',
         );
       }
 
@@ -94,8 +100,9 @@ class OutfitService {
         intent: intent,
       );
 
-      final validOutfits =
-          outfits.where((outfit) => outfit.hasCompleteLook).toList();
+      final validOutfits = outfits
+          .where((outfit) => outfit.hasCompleteLook)
+          .toList();
 
       if (validOutfits.isEmpty) {
         if (outfits.isEmpty) {
@@ -109,25 +116,22 @@ class OutfitService {
               (o) =>
                   '[${o.id.isEmpty ? "sin_id" : o.id}] falta(n): '
                   '${o.missingFieldsSummary} '
-                  '(top="${o.topId ?? "—"}", bottom="${o.bottomId ?? "—"}", '
-                  'shoes="${o.shoesId ?? "—"}")',
+                  '(onePiece="${o.onePieceId ?? "—"}", top="${o.topId ?? "—"}", '
+                  'bottom="${o.bottomId ?? "—"}", shoes="${o.shoesId ?? "—"}")',
             )
             .join(' | ');
         debugPrint(
-          '❌ Ningún outfit con top+bottom+zapatos válidos. $perOutfit',
+          '❌ Ningún outfit con look completo válido (pieza única + calzado o top + bottom + calzado). $perOutfit',
         );
         throw Exception(
           'La IA armó propuestas pero sin IDs válidos para armar el look '
-          '(hacen falta prenda superior, inferior y calzado). '
+          '(hacen falta calzado y pieza única, o calzado y par superior/inferior). '
           'Detalle: $perOutfit '
-          'Suele pasar cuando el modelo envía otros nombres de campo '
-          '(p. ej. top_id); si persiste, intenta con menos filtros (colores).',
+          'Suele pasar cuando el modelo envía otros nombres de campo; si persiste, intenta con menos filtros (colores).',
         );
       }
 
-      unawaited(
-        _saveOutfitsToFirestore(uid, validOutfits, intent, {}),
-      );
+      unawaited(_saveOutfitsToDatabase(uid, validOutfits, intent, {}));
 
       return OutfitGenerationResult(
         outfits: validOutfits,
@@ -135,9 +139,6 @@ class OutfitService {
         wardrobeImageUrlsByItemId: wardrobeImageUrlsByItemId,
       );
     } catch (e) {
-      if (e is FirebaseAIException) {
-        throw Exception('AI Error: ${e.message}');
-      }
       if (e is Exception) rethrow;
       throw Exception('Failed to generate outfits: $e');
     }
@@ -149,7 +150,7 @@ class OutfitService {
     required OutfitIntent intent,
     Map<String, String>? wardrobeImageUrlsByItemId,
   }) async {
-    final uid = _auth.currentUser?.uid;
+    final uid = _currentUserId;
     if (uid == null) throw Exception('User not logged in');
 
     try {
@@ -180,9 +181,7 @@ class OutfitService {
       final url = tryOnResult.generatedImageUrl;
       if (url.isEmpty) return null;
 
-      unawaited(
-        _savedOutfitsRepository.updateTryOnImageUrl(outfit.id, url),
-      );
+      unawaited(_savedOutfitsRepository.updateTryOnImageUrl(outfit.id, url));
       debugPrint('✅ Try-on ready for ${outfit.id}');
 
       return url;
@@ -254,19 +253,24 @@ class OutfitService {
   Future<List<String>> _getItemImageUrls(GeneratedOutfit outfit) async {
     final urls = <String>[];
 
-    for (final itemId in outfit.itemIds) {
-      try {
-        final doc =
-            await _firestore.collection('wardrobe_items').doc(itemId).get();
-        if (doc.exists) {
-          final imageUrl = doc.data()?['imageUrl'] as String?;
-          if (imageUrl != null && imageUrl.isNotEmpty) {
-            urls.add(imageUrl);
-          }
+    if (!AppSupabaseClient.isInitialized || AppSupabaseClient.client == null) {
+      return urls;
+    }
+
+    try {
+      final rows = await AppSupabaseClient.client!
+          .from('wardrobe_items')
+          .select('source_path')
+          .inFilter('id', outfit.itemIds);
+
+      for (final r in rows) {
+        final path = r['source_path'] as String?;
+        if (path != null && path.isNotEmpty) {
+          urls.add(path);
         }
-      } catch (e) {
-        debugPrint('⚠️ Failed to get image URL for item $itemId: $e');
       }
+    } catch (e) {
+      debugPrint('⚠️ Failed to get garment image URLs from Supabase: $e');
     }
 
     return urls;
@@ -308,7 +312,7 @@ class OutfitService {
     }
   }
 
-  Future<void> _saveOutfitsToFirestore(
+  Future<void> _saveOutfitsToDatabase(
     String userId,
     List<GeneratedOutfit> outfits,
     OutfitIntent intent,
@@ -327,9 +331,9 @@ class OutfitService {
           .toList();
 
       await _savedOutfitsRepository.saveOutfits(savedOutfits);
-      debugPrint('✅ Saved ${savedOutfits.length} outfits to Firestore');
+      debugPrint('✅ Saved ${savedOutfits.length} outfits to Supabase');
     } catch (e) {
-      debugPrint('⚠️ Failed to save outfits to Firestore: $e');
+      debugPrint('⚠️ Failed to save outfits to Supabase: $e');
     }
   }
 }
@@ -360,8 +364,8 @@ class OutfitGenerationResult {
     this.tryOnImageUrl,
     Map<String, String>? tryOnImageUrls,
     Map<String, String>? wardrobeImageUrlsByItemId,
-  })  : tryOnImageUrls = tryOnImageUrls ?? {},
-        wardrobeImageUrlsByItemId = wardrobeImageUrlsByItemId ?? {};
+  }) : tryOnImageUrls = tryOnImageUrls ?? {},
+       wardrobeImageUrlsByItemId = wardrobeImageUrlsByItemId ?? {};
 
   String? getImageUrlForOutfit(String outfitId) {
     return tryOnImageUrls[outfitId] ?? tryOnImageUrl;

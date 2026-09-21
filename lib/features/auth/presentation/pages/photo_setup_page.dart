@@ -8,6 +8,7 @@ import '../../../../core/services/onboarding_gate_service.dart';
 import '../../../../core/services/onboarding_prefs.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/identity_photo_grid.dart';
+import '../../../onboarding/services/photo_upload_service.dart';
 import '../../../profile/data/profile_repository.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_state.dart';
@@ -61,13 +62,14 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
 
   Future<void> _pickImage({required bool isBody}) async {
     final list = isBody ? _bodyPhotos : _facePhotos;
-    if (list.length >= _maxPerSection) {
+    final remainingSlots = _maxPerSection - list.length;
+    if (remainingSlots <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             isBody
-                ? 'Maximum $_maxPerSection body photos'
-                : 'Maximum $_maxPerSection face photos',
+                ? 'Máximo $_maxPerSection fotos de cuerpo alcanzado'
+                : 'Máximo $_maxPerSection fotos de cara alcanzado',
           ),
           backgroundColor: AppColors.error,
         ),
@@ -75,21 +77,49 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
       return;
     }
 
-    final XFile? image = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
+    try {
+      final List<XFile> images = await _picker.pickMultiImage(
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 85,
+        limit: remainingSlots,
+      );
 
-    if (image != null) {
-      final picked = await AppImage.fromXFile(image);
+      if (images.isEmpty) return;
+
+      final selected = images.take(remainingSlots).toList();
+      final picked = await Future.wait(
+        selected.map((img) => AppImage.fromXFile(img)),
+      );
+
       if (!mounted) return;
       setState(() {
         if (isBody) {
-          _bodyPhotos.add(picked);
+          _bodyPhotos.addAll(picked);
         } else {
-          _facePhotos.add(picked);
+          _facePhotos.addAll(picked);
         }
       });
+
+      if (images.length > remainingSlots && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Se añadieron las primeras $remainingSlots fotos (máximo por sección alcanzado).',
+            ),
+            backgroundColor: AppColors.gold,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error al seleccionar fotos: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al seleccionar fotos: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
     }
   }
 
@@ -115,20 +145,16 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
     final userId = authState.user.id;
 
     try {
-      if (_facePhotos.isNotEmpty) {
-        await _profileRepository.uploadFacePhotos(
-          userId: userId,
-          photos: _facePhotos,
-        );
-      }
-      if (_bodyPhotos.isNotEmpty) {
-        await _profileRepository.uploadBodyPhotos(
-          userId: userId,
-          photos: _bodyPhotos,
-        );
-      }
+      final photoUploadService = PhotoUploadService(
+        profileRepository: _profileRepository,
+      );
 
-      await _profileRepository.completeOnboarding(userId);
+      await photoUploadService.uploadOnboardingPhotosAndIdentityBoard(
+        userId: userId,
+        facePhotos: _facePhotos,
+        bodyPhotos: _bodyPhotos,
+      );
+
       await OnboardingPrefs.markTipsSeen();
 
       if (!mounted) return;
