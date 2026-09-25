@@ -8,8 +8,11 @@ import '../../features/wardrobe/presentation/pages/wardrobe_item_detail_page.dar
 
 class WardrobeItemCard extends StatelessWidget {
   final WardrobeItem item;
+  /// Heurística: ayuda a reconocer y resolver errores. Se llama al tocar el
+  /// badge de error cuando processingStatus == 'failed'.
+  final VoidCallback? onRetryProcessing;
 
-  const WardrobeItemCard({super.key, required this.item});
+  const WardrobeItemCard({super.key, required this.item, this.onRetryProcessing});
 
   String get _categoryLabel {
     if (item.type.isEmpty) return '';
@@ -122,6 +125,28 @@ class WardrobeItemCard extends StatelessWidget {
                             color: AppColors.gold,
                           ),
                         ),
+                      )
+                    else if (item.isProcessing)
+                      const Positioned(
+                        top: 10,
+                        right: 10,
+                        child: _StatusBadge(
+                          icon: null,
+                          color: AppColors.secondary,
+                          isSpinner: true,
+                        ),
+                      )
+                    else if (item.processingFailed)
+                      Positioned(
+                        top: 10,
+                        right: 10,
+                        child: GestureDetector(
+                          onTap: onRetryProcessing,
+                          child: const _StatusBadge(
+                            icon: Icons.error_outline,
+                            color: AppColors.error,
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -159,6 +184,42 @@ class WardrobeItemCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Badge circular para estado de procesamiento (spinner) o error (tocable, con
+/// tooltip explicando que se puede reintentar).
+class _StatusBadge extends StatelessWidget {
+  final IconData? icon;
+  final Color color;
+  final bool isSpinner;
+
+  const _StatusBadge({required this.icon, required this.color, this.isSpinner = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: isSpinner
+          ? 'Procesando prenda…'
+          : 'No se pudo procesar esta prenda. Toca para reintentar.',
+      child: Container(
+        padding: const EdgeInsets.all(5),
+        decoration: BoxDecoration(
+          color: AppColors.surface.withValues(alpha: 0.92),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4),
+          ],
+        ),
+        child: isSpinner
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.secondary),
+              )
+            : Icon(icon, size: 14, color: color),
       ),
     );
   }

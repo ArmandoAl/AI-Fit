@@ -130,6 +130,9 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
       debugPrint('✅ [WardrobeRepository] image-worker processing completed: $processResult');
     } catch (workerErr) {
       debugPrint('⚠️ [WardrobeRepository] image-worker processing error or timeout (raw item preserved as fallback): $workerErr');
+      // Heurística: visibilidad del estado del sistema — sin esto el item quedaba
+      // en 'processing' para siempre si la llamada nunca llegó a completarse en el worker.
+      await _markProcessingFailed(itemId, workerErr.toString());
     }
   }
 
@@ -211,6 +214,46 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
       debugPrint('✅ [WardrobeRepository] image-worker processing completed: $processResult');
     } catch (workerErr) {
       debugPrint('⚠️ [WardrobeRepository] image-worker processing error or timeout (raw item preserved as fallback): $workerErr');
+      // Heurística: visibilidad del estado del sistema — sin esto el item quedaba
+      // en 'processing' para siempre si la llamada nunca llegó a completarse en el worker.
+      await _markProcessingFailed(itemId, workerErr.toString());
+    }
+  }
+
+  @override
+  Future<void> retryProcessing(WardrobeItem item) async {
+    final uid = _getCurrentUserId();
+    if (uid == null) throw Exception("User not logged in");
+
+    try {
+      await _supabase
+          .from('wardrobe_items')
+          .update({'processing_status': 'processing', 'processing_error': null})
+          .eq('id', item.id);
+
+      final processResult = await _gateway.processWardrobeItem(
+        itemId: item.id,
+        userId: uid,
+        imagePath: item.imageUrl,
+        timeout: const Duration(seconds: 12),
+        maxRetries: 1,
+      );
+      debugPrint('✅ [WardrobeRepository] Retry succeeded for ${item.id}: $processResult');
+    } catch (e) {
+      debugPrint('❌ [WardrobeRepository] Retry failed for ${item.id}: $e');
+      await _markProcessingFailed(item.id, e.toString());
+      rethrow;
+    }
+  }
+
+  Future<void> _markProcessingFailed(String itemId, String error) async {
+    try {
+      await _supabase
+          .from('wardrobe_items')
+          .update({'processing_status': 'failed', 'processing_error': error})
+          .eq('id', itemId);
+    } catch (e) {
+      debugPrint('⚠️ [WardrobeRepository] Could not mark item $itemId as failed: $e');
     }
   }
 

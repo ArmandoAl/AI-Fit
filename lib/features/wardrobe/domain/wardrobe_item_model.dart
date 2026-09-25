@@ -61,6 +61,13 @@ class WardrobeItem {
   final List<String> season; // e.g., ['spring', 'summer']
   final DateTime? createdAt;
   final WardrobeAiMetadata? aiMetadata;
+  /// 'processing' | 'ready' | 'failed'. Heurística: visibilidad del estado
+  /// del sistema — permite mostrar en la UI que una prenda aún no tiene
+  /// cutout/embedding, o que su procesamiento falló.
+  final String? processingStatus;
+
+  bool get isProcessing => processingStatus == 'processing';
+  bool get processingFailed => processingStatus == 'failed';
 
   WardrobeItem({
     required this.id,
@@ -75,6 +82,7 @@ class WardrobeItem {
     this.season = const [],
     this.createdAt,
     this.aiMetadata,
+    this.processingStatus,
   });
 
   // Legacy: category maps to type for backward compatibility
@@ -189,6 +197,7 @@ class WardrobeItem {
           ? DateTime.tryParse(json['created_at'].toString())
           : null,
       aiMetadata: (metadata == null || metadata.isEmpty) ? null : metadata,
+      processingStatus: json['processing_status'] as String?,
     );
   }
 
@@ -229,6 +238,7 @@ class WardrobeItem {
     DateTime? createdAt,
     WardrobeAiMetadata? aiMetadata,
     bool clearAiMetadata = false,
+    String? processingStatus,
   }) {
     return WardrobeItem(
       id: id ?? this.id,
@@ -243,6 +253,7 @@ class WardrobeItem {
       season: season ?? this.season,
       createdAt: createdAt ?? this.createdAt,
       aiMetadata: clearAiMetadata ? null : (aiMetadata ?? this.aiMetadata),
+      processingStatus: processingStatus ?? this.processingStatus,
     );
   }
 

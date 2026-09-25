@@ -7,10 +7,15 @@ import '../../../../core/services/onboarding_gate_service.dart';
 import '../../../../core/services/onboarding_prefs.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_tutorial_overlay.dart';
 import '../../../../core/widgets/atelier_wordmark.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_state.dart';
 
+/// Pantalla de bienvenida. El tutorial ya no es un carrusel de texto de 3
+/// páginas: se muestra una sola vez como modal (AppTutorialOverlay), y puede
+/// reabrirse en cualquier momento desde Perfil (heurística: reconocimiento
+/// antes que recuerdo).
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
 
@@ -19,53 +24,16 @@ class WelcomePage extends StatefulWidget {
 }
 
 class _WelcomePageState extends State<WelcomePage> {
-  final PageController _pageController = PageController();
-  int _currentPage = 0;
-
-  final List<OnboardingStep> _steps = [
-    OnboardingStep(
-      number: '01',
-      icon: Icons.camera_alt_outlined,
-      title: 'Tu identidad',
-      description:
-          'Fotos claras de cara y cuerpo. Así el try-on conserva tu piel, tu silueta y tu presencia.',
-      examples: [
-        'Cuerpo completo de frente',
-        'Perfil lateral',
-        'Primer plano del rostro',
-        'Luz natural, fondo limpio',
-      ],
-    ),
-    OnboardingStep(
-      number: '02',
-      icon: Icons.checkroom_outlined,
-      title: AppStringsEs.buildWardrobe,
-      description: AppStringsEs.buildWardrobeDesc,
-      examples: [
-        'Prenda extendida',
-        'Buena iluminación',
-        'Fondo despejado',
-        'Una prenda por foto',
-      ],
-    ),
-    OnboardingStep(
-      number: '03',
-      icon: Icons.auto_awesome_outlined,
-      title: AppStringsEs.getRecommendations,
-      description: AppStringsEs.getRecommendationsDesc,
-      examples: [
-        'Describe la ocasión',
-        'Looks con tu armario',
-        'Coordinación de color',
-        'Try-on virtual',
-      ],
-    ),
-  ];
-
   @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showTutorialIfFirstTime());
+  }
+
+  Future<void> _showTutorialIfFirstTime() async {
+    if (await OnboardingPrefs.hasSeenTips()) return;
+    if (!mounted) return;
+    await AppTutorialOverlay.show(context);
   }
 
   Future<void> _finishTips({required bool goToPhotoSetup}) async {
@@ -94,15 +62,11 @@ class _WelcomePageState extends State<WelcomePage> {
     context.go('/setup-photos');
   }
 
-  void _nextPage() {
-    if (_currentPage < _steps.length - 1) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 420),
-        curve: Curves.easeOutCubic,
-      );
-    } else {
-      _finishTips(goToPhotoSetup: true);
+  Future<void> _onGetStarted() async {
+    if (!(await OnboardingPrefs.hasSeenTips())) {
+      await AppTutorialOverlay.show(context);
     }
+    await _finishTips(goToPhotoSetup: true);
   }
 
   void _skip() {
@@ -140,143 +104,62 @@ class _WelcomePageState extends State<WelcomePage> {
               ),
             ),
             Expanded(
-              child: PageView.builder(
-                controller: _pageController,
-                onPageChanged: (index) {
-                  setState(() => _currentPage = index);
-                },
-                itemCount: _steps.length,
-                itemBuilder: (context, index) {
-                  final step = _steps[index];
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
-                    child: Column(
-                      children: [
-                        Text(
-                          step.number,
-                          style: GoogleFonts.cormorantGaramond(
-                            fontSize: 64,
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.gold.withValues(alpha: 0.55),
-                            height: 1,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: AppColors.gold.withValues(alpha: 0.4),
                           ),
+                          boxShadow: AppTheme.ambientCardShadow,
                         ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: 88,
-                          height: 88,
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: AppColors.gold.withValues(alpha: 0.4),
-                            ),
-                            boxShadow: AppTheme.ambientCardShadow,
-                          ),
-                          child: Icon(
-                            step.icon,
-                            size: 36,
-                            color: AppColors.primary,
-                          ),
+                        child: const Icon(
+                          Icons.auto_awesome_outlined,
+                          size: 40,
+                          color: AppColors.primary,
                         ),
-                        const SizedBox(height: 32),
-                        Text(
-                          step.title,
-                          style: theme.textTheme.headlineLarge,
-                          textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 28),
+                      Text(
+                        'Tu estilista de bolsillo',
+                        style: GoogleFonts.cormorantGaramond(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.onSurface,
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          step.description,
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color: AppColors.secondary,
-                            height: 1.5,
-                          ),
-                          textAlign: TextAlign.center,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Sube tu identidad y tu armario, y AI-Fit armará looks '
+                        'y te mostrará cómo se ven puestos, en segundos.',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: AppColors.secondary,
+                          height: 1.5,
                         ),
-                        const SizedBox(height: 28),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(22),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius:
-                                BorderRadius.circular(AppTheme.radiusLg),
-                            border: Border.all(color: AppColors.border),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                AppStringsEs.tips.toUpperCase(),
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: AppColors.gold,
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              ...step.examples.map(
-                                (example) => Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 6),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.north_east,
-                                        size: 14,
-                                        color: AppColors.gold,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          example,
-                                          style: theme.textTheme.bodyMedium,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                _steps.length,
-                (index) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 280),
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: _currentPage == index ? 28 : 7,
-                  height: 3,
-                  decoration: BoxDecoration(
-                    color: _currentPage == index
-                        ? AppColors.primary
-                        : AppColors.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 22),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: SizedBox(
                 width: double.infinity,
                 height: 54,
                 child: FilledButton(
-                  onPressed: _nextPage,
-                  child: Text(
-                    (_currentPage == _steps.length - 1
-                            ? AppStringsEs.getStarted
-                            : AppStringsEs.next)
-                        .toUpperCase(),
-                  ),
+                  onPressed: _onGetStarted,
+                  child: Text(AppStringsEs.getStarted.toUpperCase()),
                 ),
               ),
             ),
@@ -286,20 +169,4 @@ class _WelcomePageState extends State<WelcomePage> {
       ),
     );
   }
-}
-
-class OnboardingStep {
-  final String number;
-  final IconData icon;
-  final String title;
-  final String description;
-  final List<String> examples;
-
-  OnboardingStep({
-    required this.number,
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.examples,
-  });
 }

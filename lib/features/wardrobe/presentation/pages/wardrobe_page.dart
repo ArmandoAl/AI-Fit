@@ -14,7 +14,9 @@ import '../bloc/wardrobe_event.dart';
 import '../bloc/wardrobe_state.dart';
 import '../../../../core/widgets/wardrobe_item_card.dart';
 import '../../../../core/l10n/app_strings_es.dart';
+import '../../../wardrobe/domain/wardrobe_item_model.dart';
 import '../../../wardrobe/domain/wardrobe_palette.dart';
+import '../../data/wardrobe_repository_impl.dart';
 import 'add_wardrobe_item_page.dart';
 
 class WardrobePage extends StatelessWidget {
@@ -221,6 +223,33 @@ class WardrobePage extends StatelessWidget {
     );
   }
 
+  Future<void> _retryItem(BuildContext context, WardrobeItem item) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Reintentando…'), duration: Duration(seconds: 2)),
+    );
+    try {
+      await WardrobeRepositoryImpl().retryProcessing(item);
+      if (!context.mounted) return;
+      context.read<WardrobeBloc>().add(const WardrobeLoadRequested());
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('✅ Prenda reprocesada correctamente'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      context.read<WardrobeBloc>().add(const WardrobeLoadRequested());
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('No se pudo reprocesar: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   Widget _buildGridContent(BuildContext context, WardrobeState state) {
     if (state is WardrobeLoading) {
       return const Center(
@@ -274,7 +303,11 @@ class WardrobePage extends StatelessWidget {
                       Expanded(
                         child: SizedBox(
                           height: cellHeight,
-                          child: WardrobeItemCard(item: items[row * 2]),
+                          child: WardrobeItemCard(
+                            item: items[row * 2],
+                            onRetryProcessing: () =>
+                                _retryItem(context, items[row * 2]),
+                          ),
                         ),
                       ),
                       const SizedBox(width: crossAxisSpacing),
@@ -284,6 +317,10 @@ class WardrobePage extends StatelessWidget {
                                 height: cellHeight,
                                 child: WardrobeItemCard(
                                   item: items[row * 2 + 1],
+                                  onRetryProcessing: () => _retryItem(
+                                    context,
+                                    items[row * 2 + 1],
+                                  ),
                                 ),
                               )
                             : const SizedBox.shrink(),

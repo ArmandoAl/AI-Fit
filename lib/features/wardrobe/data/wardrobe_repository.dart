@@ -7,4 +7,8 @@ abstract class WardrobeRepository {
 
   /// Update a wardrobe item
   Future<void> updateWardrobeItem(WardrobeItem item);
+
+  /// Reintenta el procesamiento (cutout + embedding CLIP) de un item existente
+  /// cuyo processing_status quedó en 'failed' o 'processing' indefinidamente.
+  Future<void> retryProcessing(WardrobeItem item);
 }

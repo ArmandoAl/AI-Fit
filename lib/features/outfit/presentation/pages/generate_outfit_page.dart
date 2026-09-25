@@ -25,7 +25,9 @@ class GenerateOutfitPage extends StatefulWidget {
 
 class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
   final TextEditingController _promptController = TextEditingController();
-  bool _generateImage = false;
+  // Heurística: visibilidad del estado del sistema — activado por default para
+  // que el usuario vea su try-on sin tener que descubrir este switch primero.
+  bool _generateImage = true;
 
   @override
   void dispose() {
@@ -130,9 +132,24 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Generate Image Toggle
+                  // Generate Image Toggle — prominente y activado por default
+                  // (heurística: visibilidad del estado del sistema).
                   Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: _generateImage
+                            ? AppColors.primary.withValues(alpha: 0.5)
+                            : Colors.transparent,
+                      ),
+                    ),
                     child: SwitchListTile(
+                      secondary: Icon(
+                        Icons.auto_awesome,
+                        color: _generateImage
+                            ? AppColors.primary
+                            : AppColors.secondary,
+                      ),
                       title: const Text(AppStringsEs.generatePreviewImage),
                       subtitle: const Text(AppStringsEs.generatePreviewSubtitle),
                       value: _generateImage,

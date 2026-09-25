@@ -8,6 +8,7 @@ import '../../../../core/platform/app_image.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/l10n/app_strings_es.dart';
 import '../../../../core/widgets/app_page_app_bar.dart';
+import '../../../../core/widgets/app_tutorial_overlay.dart';
 import '../../../../core/utils/keyboard_utils.dart';
 import '../../../../core/widgets/shell_bottom_insets.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
@@ -577,13 +578,25 @@ class _ProfilePageState extends State<ProfilePage> {
         actions: [
           PopupMenuButton<String>(
             onSelected: (value) {
-              if (value == 'logout') {
+              if (value == 'tutorial') {
+                AppTutorialOverlay.show(context);
+              } else if (value == 'logout') {
                 context.read<AuthBloc>().add(const AuthLogoutRequested());
               } else if (value == 'delete') {
                 _showDeleteAccountDialog(context);
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'tutorial',
+                child: Row(
+                  children: [
+                    Icon(Icons.help_outline, size: 20),
+                    SizedBox(width: 8),
+                    Text('Ver tutorial de nuevo'),
+                  ],
+                ),
+              ),
               const PopupMenuItem(
                 value: 'logout',
                 child: Row(

@@ -245,6 +245,8 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
                         height: 1.5,
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    _buildExampleGuide(),
                     const SizedBox(height: 28),
                     _sectionHeader(
                       title: 'Cara',
@@ -337,6 +339,89 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Guía visual bueno/malo (heurística: prevención de errores). Ilustrado con
+  /// iconos en vez de fotos reales (no hay assets de imagen en el proyecto),
+  /// pero deja clarísimo qué evitar antes de que el usuario tome la foto.
+  Widget _buildExampleGuide() {
+    return Row(
+      children: [
+        Expanded(
+          child: _exampleCard(
+            isGood: true,
+            label: 'Fondo limpio, de frente, buena luz',
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _exampleCard(
+            isGood: false,
+            label: 'Fondo saturado, recortada o contraluz',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _exampleCard({required bool isGood, required String label}) {
+    final accent = isGood ? AppColors.success : AppColors.error;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        children: [
+          AspectRatio(
+            aspectRatio: 1,
+            child: Container(
+              decoration: BoxDecoration(
+                color: isGood
+                    ? AppColors.surfaceContainerHigh
+                    : AppColors.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Stack(
+                children: [
+                  if (!isGood) ...[
+                    // Simula un fondo "ruidoso" con formas dispersas.
+                    Positioned(top: 6, left: 8, child: Icon(Icons.circle, size: 10, color: AppColors.secondary.withValues(alpha: 0.4))),
+                    Positioned(top: 10, right: 10, child: Icon(Icons.square, size: 12, color: AppColors.secondary.withValues(alpha: 0.4))),
+                    Positioned(bottom: 8, left: 14, child: Icon(Icons.circle, size: 8, color: AppColors.secondary.withValues(alpha: 0.4))),
+                  ],
+                  Align(
+                    alignment: isGood ? Alignment.center : const Alignment(0.55, 0.35),
+                    child: Icon(
+                      Icons.person,
+                      size: isGood ? 40 : 26,
+                      color: AppColors.onSurface.withValues(alpha: isGood ? 0.85 : 0.55),
+                    ),
+                  ),
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: Icon(
+                      isGood ? Icons.check_circle : Icons.cancel,
+                      size: 16,
+                      color: accent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 10.5, color: accent, height: 1.25),
+          ),
+        ],
       ),
     );
   }
