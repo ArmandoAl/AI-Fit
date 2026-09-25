@@ -3,15 +3,12 @@ FROM python:3.10-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive \
-    U2NET_HOME=/root/.u2net \
     HF_HUB_ENABLE_HF_TRANSFER=0
 
-# Instalar dependencias de sistema para OpenCV/rembg y aceleración numérica
+# Instalar dependencias de sistema para PyTorch/sentence-transformers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
-    libgl1 \
-    libglib2.0-0 \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -21,7 +18,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Precargar modelos CLIP y U2Net para evitar descargas en runtime y bloqueos por rate limit 429
+# Precargar modelo CLIP para evitar descargas en runtime y bloqueos por rate limit 429
 COPY preload_models.py .
 RUN python preload_models.py
 

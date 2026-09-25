@@ -431,6 +431,7 @@ class DeepSeekService {
     required String itemId,
     required String userId,
     String? imagePath,
+    String? cutoutBase64,
     Duration timeout = const Duration(seconds: 12),
     int maxRetries = 1,
   }) async {
@@ -440,6 +441,8 @@ class DeepSeekService {
         'itemId': itemId,
         'userId': userId,
         if (imagePath != null) 'imagePath': imagePath,
+        // Cutout ya generado on-device (Apple Vision, iOS-only). Sin soporte en Android.
+        if (cutoutBase64 != null) 'cutoutBase64': cutoutBase64,
       },
       timeoutOverride: timeout,
       maxRetriesOverride: maxRetries,

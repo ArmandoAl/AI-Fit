@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/interfaces/ai_service.dart';
 import '../../../core/platform/app_image.dart';
+import '../../../core/services/apple_vision_background_removal_service.dart';
 import '../../../core/services/deepseek_service.dart';
 import '../../../core/services/gateway_ai_service_impl.dart';
 import '../../../core/services/storage_service.dart';
@@ -30,6 +32,21 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
 
   String? _getCurrentUserId() {
     return _supabase.auth.currentUser?.id;
+  }
+
+  /// Genera el cutout on-device con Apple Vision (iOS-only). Retorna `null` en cualquier
+  /// otra plataforma o si Vision no detecta un objeto en foreground; en ese caso el item
+  /// se procesa sin cutout, sin bloquear el flujo de alta de la prenda.
+  Future<String?> _generateCutoutBase64(AppImage image) async {
+    try {
+      final cutoutBytes = await AppleVisionBackgroundRemovalService.removeBackground(image.bytes);
+      if (cutoutBytes == null) return null;
+      debugPrint('✅ [WardrobeRepository] Apple Vision cutout generado on-device (${cutoutBytes.length} bytes)');
+      return base64Encode(cutoutBytes);
+    } catch (e) {
+      debugPrint('⚠️ [WardrobeRepository] Apple Vision cutout failed (non-critical): $e');
+      return null;
+    }
   }
 
   @override
@@ -97,14 +114,16 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
     });
     debugPrint('✅ [WardrobeRepository -> Supabase] Item added: $itemId');
 
-    // Invocar segmentación (rembg) y extracción de embeddings CLIP (clip-ViT-B-32)
+    // Cutout on-device (Apple Vision, iOS-only) + extracción de embedding CLIP (clip-ViT-B-32) en el worker.
     // Se utiliza timeout acotado de 12s para no bloquear la app si el worker se encuentra ocupado
     try {
-      debugPrint('✂️ [WardrobeRepository] Invoking image-worker (rembg + CLIP ViT-B-32) for item: $itemId');
+      final cutoutBase64 = await _generateCutoutBase64(image);
+      debugPrint('✂️ [WardrobeRepository] Invoking image-worker (CLIP ViT-B-32) for item: $itemId');
       final processResult = await _gateway.processWardrobeItem(
         itemId: itemId,
         userId: uid,
         imagePath: imageUrl,
+        cutoutBase64: cutoutBase64,
         timeout: const Duration(seconds: 12),
         maxRetries: 1,
       );
@@ -176,14 +195,16 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
     });
     debugPrint('✅ [WardrobeRepository -> Supabase] Item with data added: $itemId');
 
-    // Invocar segmentación (rembg) y extracción de embeddings CLIP (clip-ViT-B-32)
+    // Cutout on-device (Apple Vision, iOS-only) + extracción de embedding CLIP (clip-ViT-B-32) en el worker.
     // Se utiliza timeout acotado de 12s para no bloquear la app si el worker se encuentra ocupado
     try {
-      debugPrint('✂️ [WardrobeRepository] Invoking image-worker (rembg + CLIP ViT-B-32) for item: $itemId');
+      final cutoutBase64 = await _generateCutoutBase64(image);
+      debugPrint('✂️ [WardrobeRepository] Invoking image-worker (CLIP ViT-B-32) for item: $itemId');
       final processResult = await _gateway.processWardrobeItem(
         itemId: itemId,
         userId: uid,
         imagePath: imageUrl,
+        cutoutBase64: cutoutBase64,
         timeout: const Duration(seconds: 12),
         maxRetries: 1,
       );

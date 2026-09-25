@@ -26,6 +26,14 @@ export class GoogleImageProvider implements ImageProvider {
       throw new Error('GEMINI_API_KEY is not configured in Supabase environment secrets');
     }
 
+    // generate_tryon SIEMPRE requiere el camino multimodal de Gemini: es el único que
+    // adjunta identityImageUrl y garmentFlatlayUrl como inlineData. Imagen 3 (:predict)
+    // es texto-a-imagen puro y no acepta imágenes de referencia, por lo que usarlo aquí
+    // genera un modelo/outfit genérico ajeno al usuario y a sus prendas reales.
+    if (options.action === 'generate_tryon') {
+      return await this.generateWithGemini(options, apiKey, model.startsWith('imagen-3') ? undefined : model);
+    }
+
     if (model.startsWith('imagen-3')) {
       try {
         return await this.generateWithImagen(options, apiKey, model);
@@ -47,12 +55,11 @@ export class GoogleImageProvider implements ImageProvider {
     model: string
   ): Promise<ImageGenerationResult> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${apiKey}`;
-    let imagenPrompt = options.prompt;
-    if (options.action === 'generate_base_image') {
-      imagenPrompt = `Photorealistic full-body studio photograph of a fashion ecommerce mannequin model on a seamless neutral light-gray background, soft studio lighting. Subject standing in a natural relaxed A-pose facing the camera. Wearing minimalist neutral dark-charcoal athletic base-layer clothing (fitted sleeveless tank top and leggings) showing clear body silhouette and natural skin tone. ${options.prompt}`;
-    } else if (options.garmentFlatlayUrl) {
-      imagenPrompt = `Photorealistic virtual try-on: subject wearing the exact outfit and accessories shown in the garment flat-lay. ${options.prompt}`;
-    }
+    // Nota: generate_tryon nunca llega aquí (ver generateImage), por lo que este método
+    // solo compone prompts de texto puro para generate_base_image.
+    const imagenPrompt = options.action === 'generate_base_image'
+      ? `Photorealistic full-body studio photograph of a fashion ecommerce mannequin model on a seamless neutral light-gray background, soft studio lighting. Subject standing in a natural relaxed A-pose facing the camera. Wearing minimalist neutral dark-charcoal athletic base-layer clothing (fitted sleeveless tank top and leggings) showing clear body silhouette and natural skin tone. ${options.prompt}`
+      : options.prompt;
 
     const response = await fetch(url, {
       method: 'POST',

@@ -98,6 +98,7 @@ export interface AiRouterRequest {
   imageUrl?: string;
   imagePath?: string;
   sourcePath?: string;
+  cutoutBase64?: string; // Cutout ya generado on-device (Apple Vision, iOS-only)
   metadata?: Record<string, unknown>;
 }
 

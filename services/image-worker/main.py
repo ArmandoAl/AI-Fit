@@ -10,7 +10,6 @@ import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
 from PIL import Image
 from pydantic import BaseModel
 from supabase import create_client, Client
@@ -35,8 +34,9 @@ CLIP_MODEL_NAME = os.getenv("CLIP_MODEL_NAME", "clip-ViT-B-32")
 
 app = FastAPI(
     title="AI-Fit Image Ingestion & Flat-Lay Worker",
-    description="Microservicio de segmentación de prendas (rembg), embeddings CLIP (512-dim), búsqueda pgvector y composición de flat-lays.",
-    version="1.1.0",
+    description="Microservicio de embeddings CLIP (512-dim), búsqueda pgvector y composición de flat-lays. "
+    "La remoción de fondo se hace on-device con Apple Vision (iOS); el worker solo recibe el cutout ya generado.",
+    version="1.2.0",
 )
 
 app.add_middleware(
@@ -52,7 +52,6 @@ app.add_middleware(
 # ==============================================================================
 _supabase_client: Optional[Client] = None
 _clip_model = None
-_rembg_session = None
 
 
 def get_supabase() -> Client:
@@ -65,23 +64,6 @@ def get_supabase() -> Client:
             )
         _supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     return _supabase_client
-
-
-def get_rembg_session():
-    global _rembg_session
-    if _rembg_session is None:
-        try:
-            from rembg import new_session
-            try:
-                _rembg_session = new_session("u2net_cloth_seg")
-                logger.info("✅ rembg session initialized with 'u2net_cloth_seg'")
-            except Exception:
-                _rembg_session = new_session("u2net")
-                logger.info("✅ rembg session initialized with fallback 'u2net'")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to initialize rembg session: {e}. Running in passthrough mode.")
-            _rembg_session = False
-    return _rembg_session
 
 
 def get_clip_model():
@@ -107,6 +89,9 @@ class ProcessItemRequest(BaseModel):
     imagePath: Optional[str] = None
     imageUrl: Optional[str] = None
     imageBase64: Optional[str] = None
+    # Cutout con fondo transparente ya generado on-device (Apple Vision, iOS-only).
+    # Si no viene (p.ej. Android), el item se procesa sin cutout: solo embedding CLIP.
+    cutoutBase64: Optional[str] = None
 
 
 class ProcessItemResponse(BaseModel):
@@ -195,21 +180,6 @@ def is_valid_uuid(val: Optional[str]) -> bool:
         return False
 
 
-def remove_background(image: Image.Image) -> Image.Image:
-    """Remueve el fondo de una imagen de prenda preservando el canal alfa."""
-    session = get_rembg_session()
-    if session:
-        try:
-            from rembg import remove
-            cutout = remove(image, session=session, alpha_matting=True)
-            return cutout
-        except Exception as e:
-            logger.error(f"❌ Error during background removal: {e}")
-    if image.mode != "RGBA":
-        return image.convert("RGBA")
-    return image
-
-
 def generate_clip_embedding(image: Image.Image) -> List[float]:
     """Genera vector de 512 dimensiones normalizado L2 con CLIP para imágenes."""
     model = get_clip_model()
@@ -270,18 +240,6 @@ def health_check():
         "version": "1.1.0",
         "clip_model": CLIP_MODEL_NAME,
     }
-
-
-@app.post("/segment")
-async def segment_image(file: UploadFile = File(...)):
-    """Endpoint directo para recortar prendas y devolver WebP transparente."""
-    contents = await file.read()
-    image = Image.open(io.BytesIO(contents))
-    cutout = remove_background(image)
-
-    buffer = io.BytesIO()
-    cutout.save(buffer, format="WEBP", lossless=True)
-    return Response(content=buffer.getvalue(), media_type="image/webp")
 
 
 @app.post("/embed")
@@ -464,12 +422,13 @@ async def process_wardrobe_item(
     authorization: Optional[str] = Header(None),
 ):
     """
-    Pipeline de ingestión visual (rembg + CLIP embedding):
+    Pipeline de ingestión visual (cutout on-device + CLIP embedding):
     1. Verifica idempotencia en Supabase si itemId y userId están presentes.
-    2. Obtiene la imagen de: base64, URL pública/firmada o Supabase Storage.
-    3. Genera cutout sin fondo en formato WebP transparente (rembg).
-    4. Si itemId y userId existen, sube cutout a `user-media` y actualiza `wardrobe_items`.
-    5. Extrae vector CLIP de 512 dimensiones (clip-ViT-B-32).
+    2. Obtiene la imagen original de: base64, URL pública/firmada o Supabase Storage.
+    3. Si payload.cutoutBase64 viene incluido (Apple Vision, iOS), lo usa como cutout WebP
+       transparente. Si no viene (p.ej. Android), continúa sin cutout.
+    4. Si itemId y userId existen, sube el cutout (si existe) a `user-media` y actualiza `wardrobe_items`.
+    5. Extrae vector CLIP de 512 dimensiones (clip-ViT-B-32) sobre el cutout o, en su defecto, la imagen original.
     6. Retorna cutoutPath, processedImageUrl, cutoutBase64 y vector de embedding.
     """
     # Requisito 2: Validar formato UUID defensivamente para evitar excepciones PostgREST 22P02
@@ -531,12 +490,12 @@ async def process_wardrobe_item(
                 detail=f"Wardrobe item '{payload.itemId}' not found in database for user '{payload.userId}'.",
             )
 
-        # Idempotencia: Verificar si ya está procesado
+        # Idempotencia: Verificar si ya está procesado.
+        # cutout_path es opcional (solo iOS/Apple Vision genera cutout); no se exige para el cache-hit.
         if (
             item
             and item.get("processing_status") == "ready"
             and item.get("embedding")
-            and item.get("cutout_path")
         ):
             logger.info(f"⚡ Item {payload.itemId} already processed. Skipping (Cache Hit).")
             return ProcessItemResponse(
@@ -585,48 +544,62 @@ async def process_wardrobe_item(
 
         original_img = Image.open(io.BytesIO(image_bytes))
 
-        # 3. Generar Cutout con fondo transparente (rembg)
-        logger.info(f"✂️ Generating background cutout for item {item_id}...")
-        cutout_img = remove_background(original_img)
+        # 3. Cutout: la remoción de fondo ocurre on-device con Apple Vision (iOS) y llega
+        #    en payload.cutoutBase64 ya recortado. En plataformas sin ese soporte (Android)
+        #    no hay cutout y el item se procesa sobre la imagen original.
+        cutout_img: Optional[Image.Image] = None
+        webp_bytes: Optional[bytes] = None
+        cutout_b64: Optional[str] = None
+        if payload.cutoutBase64:
+            logger.info(f"📥 Using on-device Apple Vision cutout provided for item {item_id}")
+            cutout_bytes = base64.b64decode(payload.cutoutBase64.split(",")[-1])
+            cutout_img = Image.open(io.BytesIO(cutout_bytes))
+            if cutout_img.mode != "RGBA":
+                cutout_img = cutout_img.convert("RGBA")
 
-        # Codificar a WebP transparente
-        webp_buffer = io.BytesIO()
-        cutout_img.save(webp_buffer, format="WEBP", quality=90, method=6)
-        webp_bytes = webp_buffer.getvalue()
-        cutout_b64 = base64.b64encode(webp_bytes).decode("ascii")
+            webp_buffer = io.BytesIO()
+            cutout_img.save(webp_buffer, format="WEBP", quality=90, method=6)
+            webp_bytes = webp_buffer.getvalue()
+            cutout_b64 = base64.b64encode(webp_bytes).decode("ascii")
+        else:
+            logger.info(f"ℹ️ No cutout provided for item {item_id} (plataforma sin remoción de fondo on-device)")
 
-        # 4. Extraer embedding CLIP de 512 dimensiones
+        # 4. Extraer embedding CLIP de 512 dimensiones (sobre el cutout si existe, si no sobre la original)
         logger.info(f"🧠 Extracting CLIP 512-dim embedding for item {item_id}...")
-        embedding_vec = generate_clip_embedding(cutout_img)
+        embedding_vec = generate_clip_embedding(cutout_img if cutout_img is not None else original_img)
 
-        # 5. Subir Cutout a Supabase Storage y actualizar BD si itemId & userId están disponibles
+        # 5. Subir Cutout a Supabase Storage (si existe) y actualizar BD si itemId & userId están disponibles
         final_cutout_path = None
         if supabase and payload.itemId and payload.userId:
-            cutout_storage_path = f"{user_id}/wardrobe/{item_id}/cutout.webp"
-            logger.info(f"⬆️ Uploading cutout to 'user-media': {cutout_storage_path} ({len(webp_bytes)} bytes)")
-            supabase.storage.from_("user-media").upload(
-                path=cutout_storage_path,
-                file=webp_bytes,
-                file_options={"content-type": "image/webp", "upsert": "true"},
-            )
+            update_fields: Dict[str, object] = {
+                "embedding": embedding_vec,
+                "embedding_model": "clip-ViT-B-32",
+                "processing_status": "ready",
+                "processing_error": None,
+            }
 
-            # URL firmada con 7 días de validez
-            try:
-                signed_res = supabase.storage.from_("user-media").create_signed_url(cutout_storage_path, 604800)
-                final_cutout_path = signed_res.get("signedUrl") if signed_res else cutout_storage_path
-            except Exception as e:
-                logger.warning(f"⚠️ Could not generate signed URL: {e}")
-                final_cutout_path = cutout_storage_path
+            if webp_bytes is not None:
+                cutout_storage_path = f"{user_id}/wardrobe/{item_id}/cutout.webp"
+                logger.info(f"⬆️ Uploading cutout to 'user-media': {cutout_storage_path} ({len(webp_bytes)} bytes)")
+                supabase.storage.from_("user-media").upload(
+                    path=cutout_storage_path,
+                    file=webp_bytes,
+                    file_options={"content-type": "image/webp", "upsert": "true"},
+                )
+
+                # URL firmada con 7 días de validez
+                try:
+                    signed_res = supabase.storage.from_("user-media").create_signed_url(cutout_storage_path, 604800)
+                    final_cutout_path = signed_res.get("signedUrl") if signed_res else cutout_storage_path
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not generate signed URL: {e}")
+                    final_cutout_path = cutout_storage_path
+
+                update_fields["cutout_path"] = final_cutout_path
 
             # Actualizar tabla public.wardrobe_items
             logger.info(f"💾 Updating wardrobe_items record in database for {item_id}...")
-            supabase.table("wardrobe_items").update({
-                "embedding": embedding_vec,
-                "embedding_model": "clip-ViT-B-32",
-                "cutout_path": final_cutout_path,
-                "processing_status": "ready",
-                "processing_error": None,
-            }).eq("id", item_id).execute()
+            supabase.table("wardrobe_items").update(update_fields).eq("id", item_id).execute()
 
         logger.info(f"🎉 Item {item_id} successfully processed and marked ready.")
         return ProcessItemResponse(

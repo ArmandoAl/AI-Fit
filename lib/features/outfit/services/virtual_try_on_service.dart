@@ -44,19 +44,24 @@ class VirtualTryOnService {
         try {
           final rows = await AppSupabaseClient.client!
               .from('wardrobe_items')
-              .select('id, category, subtype, name, cutout_path')
+              .select('id, category, subtype, name, cutout_path, source_path')
               .inFilter('id', request.outfit.itemIds);
           if (rows.isNotEmpty) {
             final list = <Map<String, String>>[];
             for (final r in rows) {
               final cutout = r['cutout_path'] as String?;
+              // Sin cutout (Android, sin soporte de remoción de fondo on-device): usar la
+              // imagen completa como fallback en lugar de excluir la prenda del flat-lay.
+              final resolvedImagePath = (cutout != null && cutout.isNotEmpty)
+                  ? cutout
+                  : r['source_path'] as String?;
               final cat = r['category'] as String?;
               final name = r['name'] as String? ?? '';
               final subtype = r['subtype'] as String? ?? '';
-              if (cutout != null && cutout.isNotEmpty && cat != null) {
+              if (resolvedImagePath != null && resolvedImagePath.isNotEmpty && cat != null) {
                 list.add({
                   'category': cat,
-                  'cutoutPath': cutout,
+                  'cutoutPath': resolvedImagePath,
                   if (subtype.isNotEmpty) 'subtype': subtype,
                   if (name.isNotEmpty) 'name': name,
                 });

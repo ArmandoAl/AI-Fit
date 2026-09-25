@@ -551,6 +551,7 @@ ${JSON.stringify(candidates, null, 2)}`;
       const targetUserId = (body.userId || user?.id) as string | undefined;
       const imageUrl = (body.imageUrl || body.imagePath || body.sourcePath) as string | undefined;
       const imageBase64 = body.imageBase64 as string | undefined;
+      const cutoutBase64 = body.cutoutBase64 as string | undefined; // Apple Vision on-device (iOS), omitido en Android
 
       if (!itemId && !imageUrl && !imageBase64) {
         return new Response(
@@ -580,6 +581,7 @@ ${JSON.stringify(candidates, null, 2)}`;
             imageUrl,
             imagePath: imageUrl,
             imageBase64,
+            cutoutBase64,
           }),
         });
 
@@ -600,6 +602,7 @@ ${JSON.stringify(candidates, null, 2)}`;
                 imagePath: imageUrl,
                 imageUrl,
                 imageBase64,
+                cutoutBase64,
               }),
             });
           }
