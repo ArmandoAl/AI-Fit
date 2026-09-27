@@ -99,8 +99,6 @@ export class GoogleImageProvider implements ImageProvider {
     requestedModel?: string
   ): Promise<ImageGenerationResult> {
     const parts: Array<Record<string, unknown>> = [];
-    let rawIdentityBytes: Uint8Array | null = null;
-    let rawFlatlayBytes: Uint8Array | null = null;
 
     // Image 1: Identity image (User Face / Body)
     if (options.identityImageUrl) {
@@ -108,8 +106,7 @@ export class GoogleImageProvider implements ImageProvider {
         const imgRes = await fetch(options.identityImageUrl);
         if (imgRes.ok) {
           const arrayBuf = await imgRes.arrayBuffer();
-          rawIdentityBytes = new Uint8Array(arrayBuf);
-          const b64 = btoa(String.fromCharCode(...rawIdentityBytes));
+          const b64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
           parts.push({
             inlineData: { mimeType: 'image/jpeg', data: b64 },
           });
@@ -125,8 +122,7 @@ export class GoogleImageProvider implements ImageProvider {
         const flatlayRes = await fetch(options.garmentFlatlayUrl);
         if (flatlayRes.ok) {
           const arrayBuf = await flatlayRes.arrayBuffer();
-          rawFlatlayBytes = new Uint8Array(arrayBuf);
-          const b64 = btoa(String.fromCharCode(...rawFlatlayBytes));
+          const b64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
           parts.push({
             inlineData: { mimeType: 'image/jpeg', data: b64 },
           });
@@ -173,11 +169,11 @@ export class GoogleImageProvider implements ImageProvider {
     const candidateModels = rawCandidates.filter((m, i, arr): m is string => Boolean(m) && arr.indexOf(m) === i);
 
     let lastError = '';
-    let textDescription = '';
+    const attemptLog: string[] = [];
 
     for (const modelCandidate of candidateModels) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelCandidate}:generateContent?key=${apiKey}`;
-      console.log(`🌐 Calling Gemini visual endpoint with model: ${modelCandidate}`);
+      console.log(`🌐 [image_providers] action=${options.action} Calling Gemini visual endpoint with model: ${modelCandidate}`);
 
       // Attempt 1: Request with IMAGE response modality
       try {
@@ -199,7 +195,7 @@ export class GoogleImageProvider implements ImageProvider {
           if (imagePart?.inlineData?.data) {
             const b64 = imagePart.inlineData.data;
             const imageBytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-            console.log(`✅ Gemini generated image successfully with model: ${modelCandidate}`);
+            console.log(`✅ [image_providers] Gemini generated image successfully with model: ${modelCandidate} (${imageBytes.length} bytes)`);
             return {
               provider: 'google-gemini',
               model: modelCandidate,
@@ -208,12 +204,19 @@ export class GoogleImageProvider implements ImageProvider {
               costUsd: 0.02,
             };
           }
+          const blockReason = data.promptFeedback?.blockReason;
+          const finishReason = data.candidates?.[0]?.finishReason;
+          attemptLog.push(`${modelCandidate}[IMAGE]: no inlineData (finishReason=${finishReason ?? 'n/a'}, blockReason=${blockReason ?? 'n/a'})`);
+        } else {
+          const errText = await response.text();
+          attemptLog.push(`${modelCandidate}[IMAGE]: HTTP ${response.status} ${errText.slice(0, 200)}`);
         }
       } catch (modalityErr) {
-        console.warn(`⚠️ Model ${modelCandidate} failed with responseModalities IMAGE:`, modalityErr);
+        console.warn(`⚠️ [image_providers] Model ${modelCandidate} failed with responseModalities IMAGE:`, modalityErr);
+        attemptLog.push(`${modelCandidate}[IMAGE]: exception ${String(modalityErr)}`);
       }
 
-      // Attempt 2: Request without IMAGE constraint (multimodal composition / assisted styling description)
+      // Attempt 2: Request without the IMAGE constraint (some models only honor plain generateContent)
       try {
         const response = await fetch(url, {
           method: 'POST',
@@ -233,6 +236,7 @@ export class GoogleImageProvider implements ImageProvider {
           if (imagePart?.inlineData?.data) {
             const b64 = imagePart.inlineData.data;
             const imageBytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+            console.log(`✅ [image_providers] Gemini generated image successfully with model: ${modelCandidate} (plain generateContent, ${imageBytes.length} bytes)`);
             return {
               provider: 'google-gemini',
               model: modelCandidate,
@@ -241,38 +245,28 @@ export class GoogleImageProvider implements ImageProvider {
               costUsd: 0.02,
             };
           }
-
           const foundText = candidateParts.find((p: Record<string, unknown>) => p.text)?.text;
-          if (foundText) {
-            textDescription = foundText;
-            console.log(`✅ Gemini assisted composition description generated with model ${modelCandidate}`);
-            break; // Successfully obtained assisted composition description
-          }
+          attemptLog.push(`${modelCandidate}[plain]: no inlineData (returned text instead: ${foundText ? 'yes' : 'no'})`);
         } else {
           lastError = await response.text();
-          console.warn(`⚠️ Gemini model ${modelCandidate} returned HTTP ${response.status}: ${lastError}`);
+          attemptLog.push(`${modelCandidate}[plain]: HTTP ${response.status} ${lastError.slice(0, 200)}`);
+          console.warn(`⚠️ [image_providers] Gemini model ${modelCandidate} returned HTTP ${response.status}: ${lastError}`);
         }
       } catch (fetchErr) {
         lastError = String(fetchErr);
-        console.warn(`⚠️ Network error calling Gemini model ${modelCandidate}:`, fetchErr);
+        attemptLog.push(`${modelCandidate}[plain]: exception ${lastError}`);
+        console.warn(`⚠️ [image_providers] Network error calling Gemini model ${modelCandidate}:`, fetchErr);
       }
     }
 
-    // Fallback asistido: Si se obtuvo descripción y se tienen bytes del flat-lay unificado o identidad
-    const fallbackBytes = rawFlatlayBytes || rawIdentityBytes;
-    if (fallbackBytes && fallbackBytes.length > 0) {
-      console.log('🔄 Serving assisted composition payload with unified flat-lay / identity fallback image');
-      return {
-        provider: 'google-gemini-assisted',
-        model: 'gemini-2.5-flash',
-        imageBytes: fallbackBytes,
-        contentType: 'image/jpeg',
-        costUsd: 0.005,
-        description: textDescription || finalPrompt,
-      };
-    }
-
-    throw new Error(`Google image provider failed across all candidates. Last error: ${lastError}`);
+    // Nunca degradar en silencio devolviendo la foto de identidad/flat-lay original como si fuera el
+    // resultado generado (bug detectado: producía un "try-on" indistinguible de un fallo, sin que la
+    // app pudiera saber que la imagen no fue realmente generada por el modelo). Si ningún candidato
+    // devolvió una imagen real, se propaga un error explícito con el detalle de cada intento.
+    console.error(`❌ [image_providers] All Gemini candidates failed for action=${options.action}. Attempts:\n${attemptLog.join('\n')}`);
+    throw new Error(
+      `Google Gemini image generation failed across all candidate models (${candidateModels.join(', ')}). Details: ${attemptLog.join(' | ')}`
+    );
   }
 }
 

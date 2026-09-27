@@ -117,7 +117,12 @@ class UserBaseImageService {
           '';
 
       final prompt = _buildBaseImagePrompt(identityProfile);
-      final idempotencyKey = 'base_image_$userId';
+      // Heurística: control de errores / expectativa correcta del sistema — una clave estable por
+      // usuario hacía que el ai-router devolviera para siempre la primera base image cacheada
+      // (buena o corrupta) incluso tras borrarla localmente y volver a generar. Cada llamada
+      // explícita debe producir una clave nueva; los reintentos internos por fallos transitorios
+      // de red (dentro de invokeGateway) siguen reutilizando esta misma clave.
+      final idempotencyKey = 'base_image_${userId}_${DateTime.now().millisecondsSinceEpoch}';
 
       // 1. Intentar generación server-side por IA si hay gateway
       try {
@@ -129,6 +134,10 @@ class UserBaseImageService {
         );
 
         final imageUrl = res['imageUrl']?.toString();
+        debugPrint(
+          'ℹ️ [UserBaseImageService] ai-router response: imageUrl=$imageUrl '
+          '(isCacheHit=${res['isCacheHit']}, provider=${res['imageProvider']}, model=${res['imageModel']})',
+        );
         if (imageUrl != null && imageUrl.isNotEmpty) {
           final isCorrupt = await isBaseImageCorrupt(imageUrl);
           if (!isCorrupt) {

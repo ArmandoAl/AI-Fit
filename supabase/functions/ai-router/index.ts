@@ -800,6 +800,13 @@ ${JSON.stringify(candidates, null, 2)}`;
       const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
       const supabaseServiceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
+      console.log(
+        `🎬 [ai-router] action=${action} user=${user.id} idempotencyKey=${effectiveIdempotencyKey} ` +
+        `identityImageUrl=${identityImageUrl ? 'present' : 'MISSING'} garmentFlatlayUrl=${garmentFlatlayUrl ? 'present' : 'none'} ` +
+        `itemsCount=${items?.length ?? 0} IMAGE_PROVIDER=${Deno.env.get('IMAGE_PROVIDER') || 'google(default)'} ` +
+        `IMAGE_MODEL=${Deno.env.get('IMAGE_MODEL') || 'imagen-3.0-generate-001(default)'} GEMINI_IMAGE_MODEL=${Deno.env.get('GEMINI_IMAGE_MODEL') || 'n/a'}`
+      );
+
       // Check Idempotency Cache Hit
       if (supabaseUrl && supabaseServiceRole && effectiveIdempotencyKey) {
         try {
@@ -840,6 +847,10 @@ ${JSON.stringify(candidates, null, 2)}`;
             }
 
             if (!isCacheCorrupt) {
+              console.log(
+                `♻️ [ai-router] Idempotency cache HIT for key=${effectiveIdempotencyKey} — returning stored ${recordIntent.storagePath} ` +
+                `(provider=${existingRecord.image_provider}, model=${existingRecord.image_model}) without calling the visual provider.`
+              );
               const latencyMs = Math.round(performance.now() - stopwatch);
               const cachedResponse: AiRouterResponse = {
                 status: 'ok',
@@ -946,6 +957,11 @@ ${JSON.stringify(candidates, null, 2)}`;
           }
         );
       }
+
+      console.log(
+        `🖼️ [ai-router] Visual provider returned result for action=${action}: provider=${generationResult.provider} ` +
+        `model=${generationResult.model} bytes=${generationResult.imageBytes?.length ?? 0}`
+      );
 
       // Validar umbral mínimo de bytes (50 KB) para evitar guardar archivos corruptos o placeholders
       const MIN_IMAGE_BYTES = 50 * 1024; // 50 KB

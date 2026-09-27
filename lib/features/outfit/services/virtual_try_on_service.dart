@@ -96,7 +96,13 @@ class VirtualTryOnService {
         accessoryDescriptions: accessoryDescriptions,
       );
 
-      final idempotencyKey = 'tryon_${userId}_${request.outfit.id}';
+      // Heurística: control de errores / expectativa correcta del sistema — una clave estable por
+      // outfit+usuario hacía que el ai-router devolviera para siempre el primer resultado cacheado
+      // (bueno o malo) en cada intento posterior, sin generar nunca una imagen nueva. Cada llamada
+      // explícita a generar/regenerar debe producir una clave nueva; los reintentos internos por
+      // fallos transitorios de red (dentro de invokeGateway) siguen reutilizando esta misma clave.
+      final idempotencyKey =
+          'tryon_${userId}_${request.outfit.id}_${DateTime.now().millisecondsSinceEpoch}';
 
       final res = await _gateway.generateTryOn(
         identityImageUrl: effectiveIdentityUrl,
@@ -110,7 +116,12 @@ class VirtualTryOnService {
 
       final imageUrl = res['imageUrl']?.toString();
       if (imageUrl != null && imageUrl.isNotEmpty) {
-        debugPrint('✅ [VirtualTryOnService] Server-side try-on successful: $imageUrl');
+        // Heurística: visibilidad del estado del sistema — permite diagnosticar en logs de cliente
+        // si el resultado vino de caché o de una generación nueva, y con qué proveedor/modelo.
+        debugPrint(
+          '✅ [VirtualTryOnService] Server-side try-on successful: $imageUrl '
+          '(isCacheHit=${res['isCacheHit']}, provider=${res['imageProvider']}, model=${res['imageModel']})',
+        );
         return VirtualTryOnResult(
           outfitId: request.outfit.id,
           generatedImageUrl: imageUrl,
