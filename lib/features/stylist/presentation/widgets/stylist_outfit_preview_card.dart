@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/l10n/app_strings_es.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/cold_start_loader.dart';
 import '../../../outfit/domain/try_on_status.dart';
 import '../../domain/chat_models.dart';
+import '../../../wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import '../../../wardrobe/domain/wardrobe_item_model.dart';
 
 class StylistOutfitPreviewCard extends StatelessWidget {
   final ChatOutfitPreview preview;
@@ -19,6 +22,12 @@ class StylistOutfitPreviewCard extends StatelessWidget {
     this.onTryOnRequest,
     this.compact = false,
   });
+
+  String get _modelLabel => switch (preview.tryOnProvider) {
+    'seedream' => 'Seedream 5.0',
+    'kling' => 'Kling O3',
+    _ => 'Gemini 3.1',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +65,7 @@ class StylistOutfitPreviewCard extends StatelessWidget {
                           placeholder: const _ShimmerBox(),
                           errorWidget: const _PlaceholderImage(),
                         )
-                      : const _PlaceholderImage(),
+                      : _GarmentPreview(itemIds: preview.outfit.itemIds),
                   _TryOnStatusOverlay(
                     status: preview.tryOnStatus,
                     onTryOnRequest: onTryOnRequest,
@@ -75,7 +84,7 @@ class StylistOutfitPreviewCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            AppStringsEs.curatedLook,
+                            _modelLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.labelLarge
@@ -109,24 +118,26 @@ class StylistOutfitPreviewCard extends StatelessWidget {
                           preview.outfit.displayExplanation,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: AppColors.textSecondary,
-                                    height: 1.25,
-                                    fontSize: 11,
-                                  ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppColors.textSecondary,
+                                height: 1.25,
+                                fontSize: 11,
+                              ),
                         ),
                       ),
                     ],
                     Row(
                       children: [
                         Text(
-                          AppStringsEs.piecesShort(preview.outfit.itemIds.length),
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 10,
-                                  ),
+                          AppStringsEs.piecesShort(
+                            preview.outfit.itemIds.length,
+                          ),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: AppColors.textSecondary,
+                                fontSize: 10,
+                              ),
                         ),
                         const Spacer(),
                         Icon(
@@ -178,7 +189,7 @@ class StylistOutfitPreviewCard extends StatelessWidget {
                             placeholder: const _ShimmerBox(),
                             errorWidget: const _PlaceholderImage(),
                           )
-                        : const _PlaceholderImage(),
+                        : _GarmentPreview(itemIds: preview.outfit.itemIds),
                     _TryOnStatusOverlay(
                       status: preview.tryOnStatus,
                       onTryOnRequest: onTryOnRequest,
@@ -195,10 +206,8 @@ class StylistOutfitPreviewCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            AppStringsEs.curatedLook,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            '${AppStringsEs.curatedLook} · $_modelLabel',
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                         ),
@@ -227,9 +236,9 @@ class StylistOutfitPreviewCard extends StatelessWidget {
                       Text(
                         preview.outfit.displayExplanation,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              height: 1.4,
-                            ),
+                          color: AppColors.textSecondary,
+                          height: 1.4,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 8),
@@ -238,8 +247,8 @@ class StylistOutfitPreviewCard extends StatelessWidget {
                         preview.outfit.itemIds.length,
                       ),
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -252,6 +261,54 @@ class StylistOutfitPreviewCard extends StatelessWidget {
   }
 }
 
+class _GarmentPreview extends StatelessWidget {
+  final List<String> itemIds;
+  const _GarmentPreview({required this.itemIds});
+
+  @override
+  Widget build(BuildContext context) {
+    final wardrobe = context.watch<WardrobeBloc>().state.allItems;
+    final items = itemIds
+        .map((id) => wardrobe.where((item) => item.id == id).firstOrNull)
+        .whereType<WardrobeItem>()
+        .toList();
+    if (items.isEmpty) return const _PlaceholderImage();
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(12),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        runAlignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final item in items.take(6))
+            SizedBox(
+              width: items.length < 3 ? 70 : 52,
+              height: items.length < 3 ? 90 : 66,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: AppNetworkImage(
+                      imageUrl: item.displayImageUrl,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                  Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.black87, fontSize: 9),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ShimmerBox extends StatelessWidget {
   const _ShimmerBox();
 
@@ -259,9 +316,7 @@ class _ShimmerBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppColors.background,
-      child: const Center(
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
+      child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
     );
   }
 }
@@ -284,10 +339,7 @@ class _TryOnStatusOverlay extends StatelessWidget {
   final TryOnStatus status;
   final VoidCallback? onTryOnRequest;
 
-  const _TryOnStatusOverlay({
-    required this.status,
-    this.onTryOnRequest,
-  });
+  const _TryOnStatusOverlay({required this.status, this.onTryOnRequest});
 
   @override
   Widget build(BuildContext context) {
@@ -312,6 +364,7 @@ class _TryOnStatusOverlay extends StatelessWidget {
         );
       case TryOnStatus.readyForTryOn:
       case TryOnStatus.failed:
+        if (onTryOnRequest == null) return const SizedBox.shrink();
         return Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
@@ -323,8 +376,10 @@ class _TryOnStatusOverlay extends StatelessWidget {
                 onTap: onTryOnRequest,
                 borderRadius: BorderRadius.circular(20),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   child: Text(
                     status == TryOnStatus.failed
                         ? 'Reintentar try-on'

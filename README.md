@@ -47,7 +47,7 @@ App en [https://aifit-a7f6b.web.app](https://aifit-a7f6b.web.app)
 
 | Tecnología | Uso en AIFit |
 |------------|----------------|
-| **Flutter / Dart** | App multiplataforma (iOS, Android, Web). El cliente orquesta IA, Storage y Firestore. |
+| **Flutter / Dart** | App multiplataforma (iOS, Android, Web). El cliente llama a Supabase para datos, Storage e IA. |
 | **BLoC + flutter_bloc** | Estado por feature: `AuthBloc`, `WardrobeBloc`, `ChatBloc`, `OutfitGenerationBloc`, `SavedOutfitsBloc`. |
 | **go_router** | Rutas, splash, onboarding y shell de navegación (Armario / Atelier / Perfil). |
 | **google_fonts** | Identidad visual: *Cormorant Garamond* (editorial) + *Outfit* (UI). |
@@ -55,25 +55,21 @@ App en [https://aifit-a7f6b.web.app](https://aifit-a7f6b.web.app)
 | **image + Dart `compute()`** | Compresión JPEG fuera del hilo de UI (en web se evita el isolate por el coste de copiar buffers). |
 | **get_it / equatable** | Inyección ligera y comparación de estados. |
 
-### Cloud (Firebase / Google Cloud)
+### Cloud
 
 | Servicio | Rol |
 |----------|-----|
-| **Firebase Authentication** | Google Sign-In. El `uid` aísla todos los datos. |
-| **Cloud Firestore** (`aifitdbex`) | `users`, `wardrobe_items`, `saved_outfits`. |
-| **Firebase Storage** | Originales de prendas, fotos de identidad, collage, imagen base y try-on. |
-| **Firebase AI SDK → Vertex AI** | Todas las llamadas a Gemini (análisis, composición, imagen). |
-| **Firebase Hosting** | Deploy de `flutter build web`. |
+| **Supabase Auth** | Sesión del usuario. |
+| **Supabase Postgres** | Perfil, fotos, prendas y outfits guardados. |
+| **Supabase Storage** | Fotos privadas de identidad y prendas; imágenes generadas. |
+| **Supabase Edge Function `ai-router`** | Orquesta DeepSeek y Gemini con claves guardadas en el servidor. |
 
 ### IA externa
 
 | Proveedor | Modelo | Dónde |
 |-----------|--------|--------|
-| OpenAI | `gpt-4.1-mini` | Chat del atelier (`StylistChatService`) |
-| DeepSeek | `deepseek-chat` | Intent estructurado (`OutfitIntentAnalyzer`) |
-| Vertex / Gemini | `gemini-2.5-flash` | Análisis de prenda + composición de outfits |
-| Vertex / Gemini | `gemini-2.5-pro` | Perfil de identidad a partir del collage |
-| Vertex / Gemini | `gemini-2.5-flash-image` | Imagen base + try-on virtual |
+| DeepSeek | `deepseek-chat` | Composición de outfits con candidatos estructurados |
+| Gemini | `gemini-3.1-flash-image` | Nueva foto del usuario con outfit, pose y escena |
 
 ---
 
@@ -82,11 +78,10 @@ App en [https://aifit-a7f6b.web.app](https://aifit-a7f6b.web.app)
 Ningún modelo ve “toda la app”. Cada etapa recibe **solo el contexto que necesita**, en el formato que mejor razona: texto estructurado, JSON de armario o bytes de imagen.
 
 ```
-Foto de prenda  →  Gemini Flash (visión)  →  metadata v2 en Firestore
-Chat natural    →  GPT-4.1-mini           →  StylistIntentState
-Prompt / intent →  DeepSeek (JSON)        →  OutfitIntent
-Armario filtrado + fotos JPEG             →  Gemini Flash multimodal  →  3 looks
-Identidad (collage + perfil) + prendas    →  Gemini Flash Image       →  try-on
+Foto de prenda  →  ai-router             →  metadata en Postgres
+Prompt / intent →  filtro del armario    →  candidatos
+Candidatos      →  DeepSeek (JSON)       →  3 looks
+Fotos de identidad + fotos de cada prenda + escena → Gemini 3.1 Flash Image → nueva foto
 ```
 
 ### 1. Contexto del armario (semántica, no solo “camiseta azul”)
@@ -98,7 +93,7 @@ Al subir una prenda, Gemini analiza la foto con un prompt de estilista profesion
 - Scores (formalidad, lujo, streetwear…)
 - Vectores de ocasión y clima
 
-Eso se guarda en Firestore. Más adelante, el ranking local (`WardrobeSearchAlgorithm` + `WardrobeMetadataScorer`) **prefiltra** el closet (máx. 10 prendas por tipo) para no mandar 50 fotos al modelo.
+Eso se guarda en Postgres. El ranking local (`WardrobeSearchAlgorithm` + `WardrobeMetadataScorer`) prefiltra el armario antes de componer outfits.
 
 ### 2. Contexto de intención (qué quiere vestir la persona)
 
@@ -108,24 +103,28 @@ Ese JSON se traduce a `OutfitSemanticTargets` y se inyecta en el prompt de compo
 
 ### 3. Contexto visual para componer el look
 
-`OutfitGeneratorService` no describe las prendas de memoria: **descarga hasta 12 JPEGs** del armario filtrado, las comprime y las envía a Gemini 2.5 Flash junto con:
-
-- El intent estructurado
-- Un bloque de texto con metadata de cada prenda (id, tipo, colores, scores)
-
-Gemini responde 3 outfits JSON (ids, explicación, match). La UI pinta los looks **antes** del try-on (entrega progresiva).
+`OutfitGeneratorService` envía a DeepSeek los candidatos estructurados (id, tipo, colores y estilo). La respuesta contiene tres outfits JSON. La UI muestra los looks antes de generar sus imágenes.
 
 ### 4. Contexto de identidad (que el try-on sea *tú*)
 
-El try-on no usa un maniquí genérico. El pipeline de identidad:
+Cada imagen se genera como una fotografía nueva:
 
-1. Fotos de cara y cuerpo (hasta 4 + 4)
-2. Collage local (`IdentityPhotoCollage`)
-3. Gemini 2.5 Pro extrae `IdentityProfile` (tono de piel, rostro, pelo, cuerpo)
-4. Gemini Flash Image genera una **imagen base** reutilizable (`baseImageUrl`)
-5. Cada try-on manda: imagen base + ancla de cara + prendas del look + bloques de `IdentityConsistencyPrompt` (misma persona, mismo tono, mismas proporciones)
+1. El usuario sube fotos claras de rostro y cuerpo (hasta 4 + 4).
+2. El servidor elige hasta cuatro referencias de esa persona y vuelve a firmar sus URLs de Storage.
+3. En la comparación temporal, el primer look usa Gemini 3.1 Flash Image, el segundo Seedream 5.0 Flash y el tercero Kling O3 Image. Cada proveedor recibe fotos individuales de la persona y las prendas; Seedream y Kling aceptan hasta diez referencias en total.
+4. Los tres generan una foto vertical 3:4 a 2K. La pose y el fondo pueden cambiar; la identidad y los detalles pequeños dependen de la calidad de las referencias y del resultado de cada modelo.
 
-La consistencia de identidad tiene prioridad sobre el “look editorial”.
+La imagen base antigua ya no participa en esta generación y sus controles se retiraron del Perfil.
+
+### Configuración del servidor
+
+La función requiere `GEMINI_API_KEY` y, para los looks segundo y tercero, `FAL_KEY` como secretos de Supabase. Crea una clave de API en [fal.ai](https://fal.ai/dashboard/keys) y guárdala como `FAL_KEY` en Edge Functions → Secrets del proyecto Supabase. `GEMINI_IMAGE_SIZE` es opcional (`1K`, `2K` o `4K`; por defecto `2K`). Tras cambiar la función, desplegar con:
+
+```sh
+supabase functions deploy ai-router --project-ref cictlfpnohrnvfchtroa --no-verify-jwt --use-api
+```
+
+Las claves nunca van en el cliente Flutter. `FASHN_API_KEY`, `IMAGE_MODEL` e `IMAGE_PROVIDER` ya no controlan este flujo. Los tres looks generan sus imágenes automáticamente para compararlas en el mismo resultado.
 
 ---
 
@@ -153,82 +152,27 @@ Resultado: el modelo ve prendas nítidas y un rostro fiel, sin mandar HEIC de 8 
 
 ## Modelos que definen los outfits
 
-La composición de un look es un **pipeline de 4 fases**, no un único prompt.
+| Fase | Motor | Resultado |
+|------|-------|-----------|
+| Conversación e intención | Chat y `OutfitIntent` | Ocasión, estilo, colores y pedido de escena |
+| Filtro | `WardrobeSearchAlgorithm` | Candidatos del armario |
+| Composición | DeepSeek `deepseek-chat` | Hasta tres outfits con IDs de prendas |
+| Imagen | Gemini `gemini-3.1-flash-image` | Foto nueva con identidad, prendas, pose y fondo |
 
-| Fase | Modelo | Qué decide |
-|------|--------|------------|
-| **0 — Conversación** | `gpt-4.1-mini` | Diálogo natural, aclara ocasión/estilo, emite `readyToGenerate`. |
-| **1 — Intent** | `deepseek-chat` (fallback `gemini-2.5-flash`) | JSON `OutfitIntent`: ocasión, paleta, formalidad, clima, restricciones. |
-| **2 — Filtro local** | Algoritmo Dart (sin IA) | Recorta el armario por metadata v2 + scores. Control de coste y combinatoria. |
-| **3 — Composición** | `gemini-2.5-flash` multimodal | Ve las prendas, elige 3 combinaciones, explica el look, da `%` de match. |
-| **4 — Try-on** | `gemini-2.5-flash-image` | Sintetiza la foto con identidad bloqueada + prendas del outfit. |
-
-**Por qué no un solo modelo**
-
-- GPT es mejor en conversación incremental.
-- DeepSeek es barato y estable en JSON a baja temperatura.
-- Gemini Flash ve la prenda (textura, caída, color) y razona el conjunto.
-- Flash Image es la modalidad de **salida de imagen**.
-- Gemini Pro se reserva para el perfil de identidad (visión de mayor fidelidad, una vez por usuario).
-
-Los outfits se persisten en `saved_outfits` (try-on en background) para el lookbook personal.
+Los outfits se guardan en Supabase Postgres. Las imágenes generadas se guardan en Supabase Storage.
 
 ---
 
 ## Arquitectura
 
-```
-Cliente Flutter (BLoC)  →  Auth / Firestore / Storage
-                        →  OpenAI + DeepSeek (REST)
-                        →  Firebase AI SDK → Vertex (Gemini)
-```
-
-Capas por feature (clean-ish):
-
-- **presentation** — páginas, widgets, BLoC
-- **domain** — modelos, prompts, paletas
-- **data** — repositorios Firestore/Storage
-- **services** — orquestación de IA (solo en features que la necesitan)
-
-El cliente **es el runtime de orquestación**. Las Cloud Functions del repo son samples; el flujo de producción corre en Dart.
-
 ```mermaid
-flowchart TB
-  subgraph UI["Flutter UI"]
-    W[Armario]
-    S[Atelier chat]
-    G[Generar look]
-    P[Perfil]
-  end
-
-  subgraph Intent["Plano de intención"]
-    GPT[GPT-4.1-mini]
-    DS[DeepSeek OutfitIntent]
-  end
-
-  subgraph Data["Plano de datos"]
-    FS[(Firestore)]
-    STG[(Storage)]
-    CACHE[ImageByteCache]
-  end
-
-  subgraph Reason["Plano de razonamiento"]
-    FILT[WardrobeSearchAlgorithm]
-    GEM[Gemini 2.5 Flash]
-    IMG[Gemini Flash Image]
-  end
-
-  S --> GPT
-  G --> DS
-  W --> STG
-  W --> GEM
-  GEM --> FS
-  DS --> FILT
-  GPT --> FILT
-  FILT --> GEM
-  P --> IMG
-  GEM --> IMG
-  IMG --> STG
+flowchart LR
+  UI[Flutter] --> DB[(Supabase Postgres)]
+  UI --> ROUTER[ai-router]
+  ROUTER --> DS[DeepSeek]
+  ROUTER --> GEM[Gemini 3.1 Flash Image]
+  ROUTER --> STORE[(Supabase Storage)]
+  DB --> ROUTER
 ```
 
 ---
@@ -237,12 +181,11 @@ flowchart TB
 
 ```
 lib/
-  main.dart                          # Bootstrap Firebase + BLoCs + tema Atelier
-  firebase_options.dart
+  main.dart                          # Bootstrap Supabase + BLoCs + tema Atelier
   core/
     theme/                           # Color, tipografía, ThemeData
     widgets/                         # Shell, nav, cards, empty states, router
-    services/                        # Firestore, Storage, Gemini, DeepSeek
+    services/                        # Supabase, Storage y gateway de IA
     utils/                           # Compresión, collage, pool, config de pipeline
     constants/                       # IdentityConsistencyPrompt
     l10n/                            # Copy en español
@@ -252,10 +195,10 @@ lib/
     wardrobe/      presentation/domain/data  Closet, análisis de prenda
     stylist/       presentation/domain/data/services  Chat atelier
     outfit/        presentation/domain/data/services  Intent, ranking, generate, try-on
-    profile/       presentation/domain/data/services  Identidad e imagen base
+    profile/       presentation/domain/data/services  Fotos y perfil de identidad
     simulation/    presentation                  Resultado lookbook
 
-functions/                           # Samples Genkit (no es el path de producción)
+supabase/functions/ai-router/        # Orquestación de IA en producción
 docs/images/                         # Capturas de producto
 web/                                 # index.html, manifest PWA
 android/ ios/                        # Hosts nativos
@@ -277,7 +220,15 @@ flutter run -d chrome
 flutter run
 ```
 
-Requiere proyecto Firebase `aifit-a7f6b`, Vertex AI habilitado y claves de OpenAI / DeepSeek según `lib/api_keys.dart` / configuración del entorno.
+Para depurar en el iPhone físico configurado en `.vscode/launch.json`:
+
+```bash
+./scripts/debug_iphone.py
+```
+
+Detén la sesión con `Ctrl+C`; Flutter conserva hot reload (`r`) y hot restart (`R`) en la terminal.
+
+La app usa la URL y clave publicable de Supabase en `--dart-define` (ver `.vscode/launch.example.json`). Las claves de Gemini y DeepSeek se configuran como secretos de Supabase para `ai-router`.
 
 ## Deploy web
 

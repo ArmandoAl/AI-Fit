@@ -17,7 +17,6 @@ import '../../../auth/presentation/bloc/auth_event.dart';
 import 'dart:convert';
 import '../../data/profile_repository.dart';
 import '../../domain/user_identity_profile.dart';
-import '../../../outfit/services/user_base_image_service.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -29,23 +28,18 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final ImagePicker _picker = ImagePicker();
   final ProfileRepository _profileRepository = ProfileRepository();
-  final UserBaseImageService _baseImageService = UserBaseImageService();
   final List<AppImage> _bodyPhotos = [];
   final List<AppImage> _facePhotos = [];
   // URLs from Firestore (already uploaded)
   final List<String> _bodyPhotoUrls = [];
   final List<String> _facePhotoUrls = [];
-  String? _baseImageUrl; // URL de la imagen base generada
   IdentityProfile? _identityProfile;
-  String? _identityCollageUrl;
 
   final int _maxBodyPhotos = 4;
   final int _maxFacePhotos = 4;
 
   bool _isUploading = false;
   bool _isLoadingPhotos = true;
-  bool _isGeneratingBaseImage = false;
-  bool _isBaseImageCollageFallback = false;
 
   Future<void> _pickImage({required bool isBodyPhoto}) async {
     final targetList = isBodyPhoto ? _bodyPhotos : _facePhotos;
@@ -217,134 +211,12 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadUserPhotos();
   }
 
-  Future<void> _generateOrRegenerateBaseImage() async {
-    final authState = context.read<AuthBloc>().state;
-    if (authState is! AuthAuthenticated) return;
-
-    if (_bodyPhotoUrls.isEmpty && _facePhotoUrls.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sube al menos una foto de cara o cuerpo primero'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isGeneratingBaseImage = true);
-
-    try {
-      final userId = authState.user.id;
-      final isRegenerate = _baseImageUrl != null;
-
-      final baseImageUrl = isRegenerate
-          ? await _baseImageService.regenerateUserBaseImage(
-              userId: userId,
-              bodyPhotoUrls: _bodyPhotoUrls,
-              facePhotoUrls: _facePhotoUrls,
-            )
-          : await _baseImageService.generateUserBaseImage(
-              userId: userId,
-              bodyPhotoUrls: _bodyPhotoUrls,
-              facePhotoUrls: _facePhotoUrls,
-            );
-
-      if (mounted) {
-        await _loadUserPhotos();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                isRegenerate
-                    ? '✅ Imagen base regenerada correctamente'
-                    : '✅ Imagen base generada correctamente',
-              ),
-              backgroundColor: AppColors.success,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      }
-
-      debugPrint('✅ Base image: $baseImageUrl');
-    } catch (e) {
-      debugPrint('❌ Error generating base image: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isGeneratingBaseImage = false);
-      }
-    }
-  }
-
-  Future<void> _deleteBaseImage() async {
-    final authState = context.read<AuthBloc>().state;
-    if (authState is! AuthAuthenticated || _baseImageUrl == null) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar imagen base'),
-        content: const Text(
-          'Se eliminará la imagen base de IA. Podrás generar una nueva después. '
-          'Tu perfil de identidad (rasgos) se conserva.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _isGeneratingBaseImage = true);
-    try {
-      await _baseImageService.deleteUserBaseImage(authState.user.id);
-      if (mounted) {
-        setState(() => _baseImageUrl = null);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Imagen base eliminada'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al eliminar: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isGeneratingBaseImage = false);
-    }
-  }
-
   void _showIdentityProfileDialog() {
     if (_identityProfile == null || _identityProfile!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Aún no hay perfil de identidad. Genera o regenera la imagen base.',
+            'Aún no hay perfil de identidad. Sube fotos de rostro y cuerpo.',
           ),
         ),
       );
@@ -428,55 +300,13 @@ class _ProfilePageState extends State<ProfilePage> {
             debugPrint('⚠️ No facePhotos field in profile data');
           }
 
-          _baseImageUrl = null;
-          if (profileData['baseImageUrl'] != null) {
-            final baseUrl = profileData['baseImageUrl'].toString();
-            if (baseUrl.isNotEmpty && !baseUrl.startsWith('mock://')) {
-              _baseImageUrl = baseUrl;
-              debugPrint('✅ Found base image URL: $_baseImageUrl');
-            }
-          }
-
           _identityProfile = IdentityProfile.fromFirestoreUser(profileData);
           if (_identityProfile!.isEmpty) _identityProfile = null;
-
-          final collage = profileData['identityCollageUrl']?.toString();
-          _identityCollageUrl =
-              (collage != null &&
-                  collage.isNotEmpty &&
-                  !collage.startsWith('mock://'))
-              ? collage
-              : null;
 
           debugPrint(
             '📊 Total photos loaded: ${_bodyPhotoUrls.length} body, ${_facePhotoUrls.length} face',
           );
         });
-
-        // Verificación de integridad: detectar si la imagen base almacenada es corrupta (< 1 KB o placeholder 1x1)
-        if (_baseImageUrl != null) {
-          final isCorrupt = await _baseImageService.isBaseImageCorrupt(_baseImageUrl!);
-          if (isCorrupt && mounted) {
-            debugPrint('⚠️ Detected corrupt base image (< 1KB). Purging and auto-regenerating clean Identity Board...');
-            await _baseImageService.deleteUserBaseImage(userId);
-            if (mounted) {
-              setState(() {
-                _baseImageUrl = null;
-                _isBaseImageCollageFallback = false;
-              });
-              if (_bodyPhotoUrls.isNotEmpty || _facePhotoUrls.isNotEmpty) {
-                _generateOrRegenerateBaseImage();
-              }
-            }
-          } else if (mounted) {
-            final isFallback = await _baseImageService.isBaseImageCollageFallback(userId);
-            if (mounted) {
-              setState(() {
-                _isBaseImageCollageFallback = isFallback;
-              });
-            }
-          }
-        }
       } else {
         debugPrint('⚠️ No profile data found for user: $userId');
       }
@@ -613,7 +443,10 @@ class _ProfilePageState extends State<ProfilePage> {
                   children: [
                     Icon(Icons.delete_forever, color: Colors.red, size: 20),
                     SizedBox(width: 8),
-                    Text('Eliminar cuenta', style: TextStyle(color: Colors.red)),
+                    Text(
+                      'Eliminar cuenta',
+                      style: TextStyle(color: Colors.red),
+                    ),
                   ],
                 ),
               ),
@@ -716,7 +549,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 else
                   _buildPhotoSection(
                     title: 'Fotos de cuerpo',
-                    subtitle: 'Cuerpo completo para un try-on más fiel',
+                    subtitle:
+                        'Frente y tres cuartos; ayudan a conservar tus proporciones',
                     bodyPhotoUrls: _bodyPhotoUrls,
                     facePhotoUrls: [],
                     localBodyPhotos: _bodyPhotos,
@@ -731,7 +565,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 if (!_isLoadingPhotos)
                   _buildPhotoSection(
                     title: 'Fotos de rostro',
-                    subtitle: 'Primer plano para anclar identidad',
+                    subtitle: 'Rostro claro desde más de un ángulo',
                     bodyPhotoUrls: [],
                     facePhotoUrls: _facePhotoUrls,
                     localBodyPhotos: [],
@@ -742,330 +576,14 @@ class _ProfilePageState extends State<ProfilePage> {
 
                 const SizedBox(height: 24),
 
-                // Base Image Section (if exists)
-                if (!_isLoadingPhotos && _baseImageUrl != null)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.success.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.success.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              _isBaseImageCollageFallback
-                                  ? Icons.collections_bookmark_outlined
-                                  : Icons.check_circle,
-                              color: _isBaseImageCollageFallback
-                                  ? AppColors.secondary
-                                  : AppColors.success,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _isBaseImageCollageFallback
-                                    ? 'Tablero de identidad (Collage de Respaldo)'
-                                    : 'Maniquí Base Neutral (IA)',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        if (_isBaseImageCollageFallback)
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: AppColors.secondary.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: AppColors.secondary.withValues(alpha: 0.4),
-                              ),
-                            ),
-                            child: const Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(Icons.info_outline, color: AppColors.secondary, size: 20),
-                                SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Modo Collage de Respaldo Activo',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                          color: AppColors.primary,
-                                        ),
-                                      ),
-                                      SizedBox(height: 2),
-                                      Text(
-                                        'Se está utilizando el tablero compuesto de fotos como respaldo defensivo. Pulsa "Regenerar" para sintetizar el maniquí neutral con IA.',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: AppColors.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        else
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: AppColors.success.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: AppColors.success.withValues(alpha: 0.4),
-                              ),
-                            ),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.auto_awesome, color: AppColors.success, size: 18),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Maniquí de Estudio IA Activo (Fondo neutro, fisionomía y complexión preservadas)',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                      color: AppColors.primary,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: AppNetworkImage(
-                            key: ValueKey(_baseImageUrl),
-                            imageUrl: _baseImageUrl!,
-                            width: double.infinity,
-                            height: 300,
-                            fit: BoxFit.cover,
-                            placeholder: Container(
-                              height: 300,
-                              color: AppColors.background,
-                              child: const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                            ),
-                            errorWidget: Container(
-                              height: 300,
-                              color: AppColors.background,
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(
-                                    Icons.broken_image_outlined,
-                                    size: 40,
-                                    color: AppColors.error,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  const Text(
-                                    'Error al cargar imagen base',
-                                    style: TextStyle(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  ElevatedButton.icon(
-                                    onPressed: _isGeneratingBaseImage
-                                        ? null
-                                        : _generateOrRegenerateBaseImage,
-                                    icon: const Icon(Icons.refresh, size: 16),
-                                    label: const Text('Reintentar'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.secondary,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 8,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'This optimized image will be used for all Virtual Try-On outfits.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                            height: 1.4,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _deleteBaseImage,
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  size: 18,
-                                ),
-                                label: const Text('Eliminar'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.error,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            if (_identityProfile != null)
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _showIdentityProfileDialog,
-                                  icon: const Icon(
-                                    Icons.badge_outlined,
-                                    size: 18,
-                                  ),
-                                  label: const Text('Ver perfil IA'),
-                                ),
-                              ),
-                          ],
-                        ),
-                        if (_identityProfile != null) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.check_circle,
-                                size: 14,
-                                color: AppColors.success.withValues(alpha: 0.9),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  'Perfil de rasgos faciales/corporales listo'
-                                  '${_identityCollageUrl != null ? ' · Collage guardado' : ''}',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-
-                if (!_isLoadingPhotos && _baseImageUrl != null)
+                if (!_isLoadingPhotos && _identityProfile != null) ...[
                   const SizedBox(height: 24),
-
-                // Generate Base Image Button
-                if (!_isLoadingPhotos &&
-                    (_bodyPhotoUrls.isNotEmpty || _facePhotoUrls.isNotEmpty))
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.secondary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.secondary.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              _baseImageUrl != null
-                                  ? Icons.refresh
-                                  : Icons.auto_awesome,
-                              color: AppColors.secondary,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _baseImageUrl != null
-                                    ? 'Regenerar imagen base'
-                                    : 'Generar imagen base',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _baseImageUrl != null
-                              ? 'Generate a new base image from your photos. This will replace the existing one.'
-                              : 'Create an optimized base image from your photos. This will be used for all Virtual Try-On outfits, saving time and costs.',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                            height: 1.4,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _isGeneratingBaseImage
-                                ? null
-                                : _generateOrRegenerateBaseImage,
-                            icon: _isGeneratingBaseImage
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                    ),
-                                  )
-                                : Icon(
-                                    _baseImageUrl != null
-                                        ? Icons.refresh
-                                        : Icons.auto_awesome,
-                                  ),
-                            label: Text(
-                              _isGeneratingBaseImage
-                                  ? 'Generando...'
-                                  : _baseImageUrl != null
-                                  ? 'Regenerar imagen base'
-                                  : 'Generar imagen base',
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.secondary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  OutlinedButton.icon(
+                    onPressed: _showIdentityProfileDialog,
+                    icon: const Icon(Icons.badge_outlined),
+                    label: const Text('Ver perfil de identidad IA'),
                   ),
+                ],
 
                 const SizedBox(height: 32),
 

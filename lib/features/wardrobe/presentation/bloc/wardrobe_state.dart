@@ -4,6 +4,9 @@ import '../../domain/wardrobe_item_model.dart';
 abstract class WardrobeState extends Equatable {
   const WardrobeState();
 
+  List<WardrobeItem> get allItems => const [];
+  List<WardrobeItem> get items => allItems;
+
   @override
   List<Object?> get props => [];
 }
@@ -17,6 +20,7 @@ class WardrobeLoading extends WardrobeState {
 }
 
 class WardrobeLoaded extends WardrobeState {
+  @override
   final List<WardrobeItem> allItems;
   final List<WardrobeItem> filteredItems;
   final String selectedCategory;

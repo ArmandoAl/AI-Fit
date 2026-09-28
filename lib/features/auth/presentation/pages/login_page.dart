@@ -6,6 +6,7 @@ import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
 import '../../../../core/l10n/app_strings_es.dart';
+import '../../../../core/services/worker_warmup_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/atelier_wordmark.dart';
 
@@ -21,6 +22,7 @@ class LoginPage extends StatelessWidget {
         body: BlocListener<AuthBloc, AuthState>(
           listener: (context, state) {
             if (state is AuthAuthenticated) {
+              WorkerWarmupService.warmUp();
               // La navegación la maneja el router automáticamente
             }
           },

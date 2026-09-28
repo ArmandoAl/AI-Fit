@@ -28,11 +28,7 @@ class AppTheme {
   ];
 
   static const List<BoxShadow> goldGlow = [
-    BoxShadow(
-      color: Color(0x44FF2A85),
-      blurRadius: 24,
-      offset: Offset(0, 8),
-    ),
+    BoxShadow(color: Color(0x44FF2A85), blurRadius: 24, offset: Offset(0, 8)),
   ];
 
   /// Tema Dark Glam principal
@@ -140,9 +136,7 @@ class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surfaceContainerHigh,
         selectedColor: AppColors.neonMagenta.withValues(alpha: 0.25),
-        labelStyle: textTheme.labelMedium?.copyWith(
-          color: AppColors.onSurface,
-        ),
+        labelStyle: textTheme.labelMedium?.copyWith(color: AppColors.onSurface),
         secondaryLabelStyle: textTheme.labelMedium?.copyWith(
           color: AppColors.neonMagenta,
           fontWeight: FontWeight.w600,
@@ -156,8 +150,12 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surfaceContainerHigh,
-        hintStyle: textTheme.bodyMedium?.copyWith(color: AppColors.accentInactive),
-        labelStyle: textTheme.labelLarge?.copyWith(color: AppColors.textSecondary),
+        hintStyle: textTheme.bodyMedium?.copyWith(
+          color: AppColors.accentInactive,
+        ),
+        labelStyle: textTheme.labelLarge?.copyWith(
+          color: AppColors.textSecondary,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusMd),
           borderSide: const BorderSide(color: AppColors.border),
@@ -168,7 +166,10 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusMd),
-          borderSide: const BorderSide(color: AppColors.neonMagenta, width: 1.5),
+          borderSide: const BorderSide(
+            color: AppColors.neonMagenta,
+            width: 1.5,
+          ),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusMd),
@@ -235,8 +236,12 @@ class AppTheme {
           borderRadius: BorderRadius.circular(radiusLg),
           side: const BorderSide(color: AppColors.border),
         ),
-        titleTextStyle: textTheme.headlineSmall?.copyWith(color: AppColors.onSurface),
-        contentTextStyle: textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+        titleTextStyle: textTheme.headlineSmall?.copyWith(
+          color: AppColors.onSurface,
+        ),
+        contentTextStyle: textTheme.bodyMedium?.copyWith(
+          color: AppColors.textSecondary,
+        ),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: AppColors.surface,
@@ -262,6 +267,47 @@ class AppTheme {
     );
   }
 
-  /// Alias para retrocompatibilidad
-  static ThemeData get lightTheme => darkTheme;
+  static ThemeData get lightTheme {
+    const colors = ColorScheme(
+      brightness: Brightness.light,
+      primary: Color(0xFFC2185B),
+      onPrimary: Colors.white,
+      secondary: Color(0xFF5D5366),
+      onSecondary: Colors.white,
+      error: Color(0xFFB3261E),
+      onError: Colors.white,
+      surface: Colors.white,
+      onSurface: Color(0xFF201A23),
+    );
+    final textTheme = AppTypography.textTheme(colors);
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      colorScheme: colors,
+      scaffoldBackgroundColor: const Color(0xFFF7F4FA),
+      fontFamily: AppTypography.bodyFontFamily,
+      textTheme: textTheme,
+      appBarTheme: AppBarTheme(
+        backgroundColor: const Color(0xFFF7F4FA),
+        foregroundColor: colors.onSurface,
+        elevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
+      ),
+      cardTheme: CardThemeData(
+        color: Colors.white,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radiusLg),
+          side: const BorderSide(color: Color(0xFFD9D0E2)),
+        ),
+      ),
+      dividerTheme: const DividerThemeData(color: Color(0xFFD9D0E2)),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(radiusXl)),
+        ),
+      ),
+    );
+  }
 }

@@ -2,15 +2,29 @@
 library;
 
 import 'package:aifit/paths.dart';
+import 'package:uuid/uuid.dart';
 import '../../profile/domain/user_identity_profile.dart';
 import '../../wardrobe/domain/wardrobe_palette.dart';
 import 'outfit_semantic_targets.dart';
+
+const defaultTryOnProvider = 'seedream';
+const tryOnProvidersByPosition = [
+  defaultTryOnProvider,
+  defaultTryOnProvider,
+  defaultTryOnProvider,
+];
+
+// Keep the positional API for existing flows; provider choice is not position-based.
+String tryOnProviderForPosition(int _) => defaultTryOnProvider;
 
 class OutfitIntent {
   final String?
   reasoning; // Explicación del razonamiento de la IA (Chain of Thought)
   final String? occasion; // 'casual', 'formal', 'sport', 'party', 'work', etc.
   final List<String> preferredColors;
+
+  /// Hard color requirements by garment category; `*` applies to every visible item.
+  final Map<String, List<String>> requiredColorsByCategory;
   final List<String> styleTags; // ['casual', 'formal', 'minimalist', etc.]
   final String? season; // 'spring', 'summer', 'fall', 'winter'
   final String? weather; // 'sunny', 'rainy', 'cold', 'warm'
@@ -22,6 +36,7 @@ class OutfitIntent {
     this.reasoning,
     this.occasion,
     this.preferredColors = const [],
+    this.requiredColorsByCategory = const {},
     this.styleTags = const [],
     this.season,
     this.weather,
@@ -37,10 +52,20 @@ class OutfitIntent {
     final rawTags = json['styleTags'] != null
         ? List<String>.from(json['styleTags'])
         : <String>[];
+    final rawRequiredColors = json['requiredColorsByCategory'];
+    final requiredColors = <String, List<String>>{};
+    if (rawRequiredColors is Map) {
+      for (final entry in rawRequiredColors.entries) {
+        if (entry.value is List) {
+          requiredColors[entry.key.toString()] = List<String>.from(entry.value);
+        }
+      }
+    }
     return OutfitIntent(
       reasoning: json['reasoning']?.toString(),
       occasion: WardrobePalette.normalizeOccasion(json['occasion']?.toString()),
       preferredColors: WardrobePalette.normalizeColors(rawColors),
+      requiredColorsByCategory: requiredColors,
       styleTags: WardrobePalette.normalizeStyleTags(rawTags),
       season: json['season'] != null
           ? WardrobePalette.normalizeSeason(json['season'].toString())
@@ -59,6 +84,8 @@ class OutfitIntent {
       if (reasoning != null) 'reasoning': reasoning,
       if (occasion != null) 'occasion': occasion,
       'preferredColors': preferredColors,
+      if (requiredColorsByCategory.isNotEmpty)
+        'requiredColorsByCategory': requiredColorsByCategory,
       'styleTags': styleTags,
       if (season != null) 'season': season,
       if (weather != null) 'weather': weather,
@@ -142,6 +169,50 @@ class GeneratedOutfit {
     return explanation.trim();
   }
 
+  static final _uuidRegex = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  static String ensureUuid(String? id) {
+    if (id != null) {
+      final clean = id.trim();
+      if (_uuidRegex.hasMatch(clean)) {
+        return clean;
+      }
+    }
+    return const Uuid().v4();
+  }
+
+  GeneratedOutfit copyWith({
+    String? id,
+    String? topId,
+    String? bottomId,
+    String? shoesId,
+    String? outerwearId,
+    String? onePieceId,
+    List<String>? accessoryIds,
+    int? matchPercentage,
+    String? explanation,
+    String? explanationEs,
+    double? compatibilityScore,
+    Map<String, dynamic>? metadata,
+  }) {
+    return GeneratedOutfit(
+      id: id ?? this.id,
+      topId: topId ?? this.topId,
+      bottomId: bottomId ?? this.bottomId,
+      shoesId: shoesId ?? this.shoesId,
+      outerwearId: outerwearId ?? this.outerwearId,
+      onePieceId: onePieceId ?? this.onePieceId,
+      accessoryIds: accessoryIds ?? this.accessoryIds,
+      matchPercentage: matchPercentage ?? this.matchPercentage,
+      explanation: explanation ?? this.explanation,
+      explanationEs: explanationEs ?? this.explanationEs,
+      compatibilityScore: compatibilityScore ?? this.compatibilityScore,
+      metadata: metadata ?? this.metadata,
+    );
+  }
+
   factory GeneratedOutfit.fromJson(Map<String, dynamic> json) {
     String? pickId(dynamic v) {
       if (v == null) return null;
@@ -195,14 +266,17 @@ class GeneratedOutfit {
           .whereType<String>()
           .toList();
     } else {
-      final singleAcc = pickId(json['accessoryId']) ??
+      final singleAcc =
+          pickId(json['accessoryId']) ??
           pickId(json['accessory_id']) ??
           pickId(json['accessory']);
       if (singleAcc != null) accessoryIds.add(singleAcc);
     }
 
+    final rawId = json['id']?.toString() ?? json['outfitId']?.toString();
+
     return GeneratedOutfit(
-      id: json['id']?.toString() ?? json['outfitId']?.toString() ?? '',
+      id: ensureUuid(rawId),
       topId: topId,
       bottomId: bottomId,
       shoesId: shoesId,
@@ -290,29 +364,14 @@ class GeneratedOutfit {
 
 class VirtualTryOnRequest {
   final GeneratedOutfit outfit;
-  final List<String> itemImageUrls; // URLs de las imágenes de las prendas
-  final String?
-  garmentFlatlayUrl; // Tarea 3.4: Flat-lay consolidado (2-image pipeline)
-  final List<Map<String, String>>?
-  items; // Cutouts estructurados para composición backend
-  final String? userBodyPhotoUrl; // URL de foto de cuerpo del usuario
-  final String? userFacePhotoUrl; // URL de foto de cara del usuario
   final IdentityProfile? identityProfile;
-  final Map<String, dynamic>? generationOptions; // Opciones para la generación
+  final String? scenePrompt;
 
   VirtualTryOnRequest({
     required this.outfit,
-    required this.itemImageUrls,
-    this.garmentFlatlayUrl,
-    this.items,
-    this.userBodyPhotoUrl,
-    this.userFacePhotoUrl,
     this.identityProfile,
-    this.generationOptions,
+    this.scenePrompt,
   });
-
-  bool get hasUserPhotos =>
-      userBodyPhotoUrl != null || userFacePhotoUrl != null;
 }
 
 class VirtualTryOnResult {

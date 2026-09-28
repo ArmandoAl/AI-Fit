@@ -149,7 +149,7 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
         profileRepository: _profileRepository,
       );
 
-      await photoUploadService.uploadOnboardingPhotosAndIdentityBoard(
+      await photoUploadService.uploadOnboardingPhotos(
         userId: userId,
         facePhotos: _facePhotos,
         bodyPhotos: _bodyPhotos,
@@ -195,9 +195,7 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
   @override
   Widget build(BuildContext context) {
     if (_checkingExisting) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -209,9 +207,9 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
             onPressed: _isUploading ? null : _skip,
             child: Text(
               'OMITIR',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: AppColors.textSecondary),
             ),
           ),
         ],
@@ -237,8 +235,8 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
                     const SizedBox(height: 8),
                     const Text(
                       'Sube fotos tuyas (no de Pinterest). Con una sola foto '
-                      'de cara o cuerpo ya puedes usar la app; hasta 4 por sección '
-                      'mejoran el try-on virtual.',
+                      'de cara o cuerpo ya puedes usar la app. Para conservar mejor '
+                      'tu identidad en nuevas poses, sube fotos claras de ambos.',
                       style: TextStyle(
                         fontSize: 14,
                         color: AppColors.textSecondary,
@@ -250,7 +248,7 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
                     const SizedBox(height: 28),
                     _sectionHeader(
                       title: 'Cara',
-                      subtitle: 'Primer plano, buena luz',
+                      subtitle: 'Primer plano, buena luz y varios ángulos',
                       count: _facePhotos.length,
                     ),
                     const SizedBox(height: 12),
@@ -263,7 +261,7 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
                     const SizedBox(height: 28),
                     _sectionHeader(
                       title: 'Cuerpo completo',
-                      subtitle: 'De frente o perfil, fondo claro',
+                      subtitle: 'Cuerpo completo de frente y tres cuartos',
                       count: _bodyPhotos.length,
                     ),
                     const SizedBox(height: 12),
@@ -390,16 +388,44 @@ class _PhotoSetupPageState extends State<PhotoSetupPage> {
                 children: [
                   if (!isGood) ...[
                     // Simula un fondo "ruidoso" con formas dispersas.
-                    Positioned(top: 6, left: 8, child: Icon(Icons.circle, size: 10, color: AppColors.secondary.withValues(alpha: 0.4))),
-                    Positioned(top: 10, right: 10, child: Icon(Icons.square, size: 12, color: AppColors.secondary.withValues(alpha: 0.4))),
-                    Positioned(bottom: 8, left: 14, child: Icon(Icons.circle, size: 8, color: AppColors.secondary.withValues(alpha: 0.4))),
+                    Positioned(
+                      top: 6,
+                      left: 8,
+                      child: Icon(
+                        Icons.circle,
+                        size: 10,
+                        color: AppColors.secondary.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Icon(
+                        Icons.square,
+                        size: 12,
+                        color: AppColors.secondary.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 8,
+                      left: 14,
+                      child: Icon(
+                        Icons.circle,
+                        size: 8,
+                        color: AppColors.secondary.withValues(alpha: 0.4),
+                      ),
+                    ),
                   ],
                   Align(
-                    alignment: isGood ? Alignment.center : const Alignment(0.55, 0.35),
+                    alignment: isGood
+                        ? Alignment.center
+                        : const Alignment(0.55, 0.35),
                     child: Icon(
                       Icons.person,
                       size: isGood ? 40 : 26,
-                      color: AppColors.onSurface.withValues(alpha: isGood ? 0.85 : 0.55),
+                      color: AppColors.onSurface.withValues(
+                        alpha: isGood ? 0.85 : 0.55,
+                      ),
                     ),
                   ),
                   Positioned(

@@ -22,6 +22,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY preload_models.py .
 RUN python preload_models.py
 
+# A partir de aquí forzar modo offline para evitar llamadas a HuggingFace en runtime
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
+
 # Copiar código fuente
 COPY . .
 

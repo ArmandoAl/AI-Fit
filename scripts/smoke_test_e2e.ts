@@ -56,7 +56,7 @@ async function testImageWorkerHealth(): Promise<void> {
     }
 
     const data = await res.json() as Record<string, unknown>;
-    if (data.status === 'healthy' && data.service === 'image-worker') {
+    if ((data.status === 'healthy' || data.status === 'ok') && (data.service === 'image-worker' || data.service === 'aifit-image-worker')) {
       recordResult({
         suite: 'ImageWorker',
         name: 'Healthcheck Endpoint (/health)',
@@ -171,7 +171,7 @@ async function testDatabaseTablesAndRls(client: SupabaseClient | null): Promise<
     { name: 'wardrobe_items', key: 'id' },
     { name: 'outfits', key: 'id' },
     { name: 'outfit_generations', key: 'id' },
-    { name: 'outfit_items', key: 'id' },
+    { name: 'outfit_items', key: 'outfit_id' },
     { name: 'user_photos', key: 'id' },
   ];
 
@@ -337,13 +337,14 @@ async function testStorageBuckets(client: SupabaseClient | null): Promise<void> 
 
     // Storage upload & delete test
     const testBucket = 'user-media';
-    const testPath = `smoke_test/test_${Date.now()}.txt`;
-    const testPayload = Buffer.from('Smoke test payload for AI-Fit cutover verification');
+    const testPath = `smoke_test/test_${Date.now()}.png`;
+    // 1x1 transparent PNG buffer
+    const testPayload = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
     const uploadStart = performance.now();
     const { error: uploadError } = await client.storage
       .from(testBucket)
-      .upload(testPath, testPayload, { contentType: 'text/plain', upsert: true });
+      .upload(testPath, testPayload, { contentType: 'image/png', upsert: true });
 
     const uploadDuration = Math.round(performance.now() - uploadStart);
 

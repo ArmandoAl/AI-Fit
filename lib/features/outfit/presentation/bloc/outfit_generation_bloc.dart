@@ -41,10 +41,8 @@ class OutfitGenerationBloc
         final id = result.outfits[i].id;
         if (!event.generateImage) {
           statuses[id] = TryOnStatus.none;
-        } else if (i == 0) {
-          statuses[id] = TryOnStatus.generating;
         } else {
-          statuses[id] = TryOnStatus.readyForTryOn;
+          statuses[id] = TryOnStatus.generating;
         }
       }
 
@@ -61,11 +59,15 @@ class OutfitGenerationBloc
         return;
       }
 
-      await _runTryOnForOutfit(
-        outfitId: result.outfits.first.id,
-        emit: emit,
-        loaded: loaded,
-      );
+      for (final outfit in result.outfits) {
+        await _runTryOnForOutfit(
+          outfitId: outfit.id,
+          emit: emit,
+          loaded: state is OutfitGenerationLoaded
+              ? state as OutfitGenerationLoaded
+              : loaded,
+        );
+      }
     } catch (e) {
       debugPrint('❌ Error generating outfits: $e');
       emit(OutfitGenerationError(message: e.toString()));
@@ -120,6 +122,7 @@ class OutfitGenerationBloc
       final url = await _outfitService.generateTryOnForOutfit(
         outfit: outfit,
         intent: loaded.intent,
+        tryOnProvider: tryOnProviderForPosition(loaded.outfits.indexOf(outfit)),
         wardrobeImageUrlsByItemId: loaded.wardrobeImageUrlsByItemId,
       );
 

@@ -51,7 +51,10 @@ export interface FlatlayItemDto {
 export interface ImageGenerationOptions {
   action: 'generate_tryon' | 'generate_base_image';
   identityImageUrl: string;
+  identityImageUrls?: string[];
   garmentImageUrls?: string[];
+  garmentDescriptions?: string[];
+  scenePrompt?: string;
   garmentFlatlayUrl?: string; // Tarea 3.4: Flat-lay unificado (2 imágenes en try-on)
   prompt: string;
   outfitId?: string;
@@ -82,8 +85,11 @@ export interface AiRouterRequest {
   intent?: Record<string, unknown>;
   candidates?: CandidateItem[];
   identityImageUrl?: string;
+  wardrobeItemIds?: string[];
   garmentImageUrls?: string[];
   garmentFlatlayUrl?: string; // Tarea 3.4
+  scenePrompt?: string;
+  tryOnProvider?: 'gemini' | 'seedream' | 'kling';
   items?: FlatlayItemDto[];
   outfitId?: string;
   categoryFilter?: string;

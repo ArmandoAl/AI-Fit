@@ -8,7 +8,7 @@
       "program": "lib/main.dart",
       "toolArgs": [
         "--dart-define=SUPABASE_URL=https://cictlfpnohrnvfchtroa.supabase.co",
-        "--dart-define=SUPABASE_ANON_KEY=TU_ANON_KEY_AQUI"
+        "--dart-define=SUPABASE_PUBLISHABLE_KEY=TU_SB_PUBLISHABLE_KEY_AQUI"
       ]
     },
     {
@@ -18,7 +18,7 @@
       "program": "lib/main.dart",
       "toolArgs": [
         "--dart-define=SUPABASE_URL=https://cictlfpnohrnvfchtroa.supabase.co",
-        "--dart-define=SUPABASE_ANON_KEY=TU_ANON_KEY_AQUI"
+        "--dart-define=SUPABASE_PUBLISHABLE_KEY=TU_SB_PUBLISHABLE_KEY_AQUI"
       ]
     },
     {

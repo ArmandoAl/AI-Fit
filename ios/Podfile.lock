@@ -1,16 +1,22 @@
 PODS:
   - Flutter (1.0.0)
+  - subject_lift_kit (0.0.1):
+    - Flutter
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
+  - subject_lift_kit (from `.symlinks/plugins/subject_lift_kit/ios`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
+  subject_lift_kit:
+    :path: ".symlinks/plugins/subject_lift_kit/ios"
 
 SPEC CHECKSUMS:
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  subject_lift_kit: deb407ccce12002254b65ab452952af2bce22e32
 
-PODFILE CHECKSUM: 53a6aebc29ccee84c41f92f409fc20cd4ca011f1
+PODFILE CHECKSUM: 93b0beafbaf21faa38796d6f5983f8db785f7856
 
 COCOAPODS: 1.16.2

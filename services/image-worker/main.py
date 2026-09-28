@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import io
 import logging
 import os
@@ -10,7 +11,7 @@ import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from PIL import Image
+from PIL import Image, ImageOps
 from pydantic import BaseModel
 from supabase import create_client, Client
 
@@ -71,8 +72,12 @@ def get_clip_model():
     if _clip_model is None:
         try:
             from sentence_transformers import SentenceTransformer
-            logger.info(f"⏳ Loading CLIP model '{CLIP_MODEL_NAME}'...")
-            _clip_model = SentenceTransformer(CLIP_MODEL_NAME)
+            logger.info(f"⏳ Loading CLIP model '{CLIP_MODEL_NAME}' (local cache priority)...")
+            try:
+                _clip_model = SentenceTransformer(CLIP_MODEL_NAME, local_files_only=True)
+            except Exception as cache_err:
+                logger.info(f"Local files only load failed ({cache_err}), trying standard load...")
+                _clip_model = SentenceTransformer(CLIP_MODEL_NAME)
             logger.info(f"✅ CLIP model '{CLIP_MODEL_NAME}' loaded successfully (512 dimensions)")
         except Exception as e:
             logger.warning(f"⚠️ Failed to load CLIP model: {e}. Fallback vector generator enabled.")
@@ -125,6 +130,31 @@ class CompositeFlatlayResponse(BaseModel):
     isCacheHit: bool = False
     fileSizeBytes: Optional[int] = None
     details: Optional[str] = None
+
+
+class KlingReferencesRequest(BaseModel):
+    userId: str
+    paths: List[str]
+
+
+class KlingReferencesResponse(BaseModel):
+    signedUrls: List[str]
+
+
+def prepare_kling_reference(raw_bytes: bytes) -> bytes:
+    """Center a whole garment on a square canvas accepted by Kling."""
+    with Image.open(io.BytesIO(raw_bytes)) as source:
+        image = ImageOps.exif_transpose(source).convert("RGBA")
+        scale = 900 / max(image.size)
+        image = image.resize(
+            (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+        canvas = Image.new("RGB", (1024, 1024), "white")
+        canvas.paste(image, ((1024 - image.width) // 2, (1024 - image.height) // 2), image)
+        output = io.BytesIO()
+        canvas.save(output, format="JPEG", quality=88, optimize=True)
+        return output.getvalue()
 
 
 class EncodeTextRequest(BaseModel):
@@ -232,6 +262,35 @@ def generate_clip_text_embedding(text: str) -> List[float]:
 # ==============================================================================
 # Endpoints de la API
 # ==============================================================================
+@app.post("/kling-references", response_model=KlingReferencesResponse)
+async def kling_references_endpoint(
+    payload: KlingReferencesRequest,
+    authorization: Optional[str] = Header(None),
+):
+    expected = f"Bearer {WORKER_SECRET_TOKEN}"
+    if not WORKER_SECRET_TOKEN or not hmac.compare_digest(authorization or "", expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not is_valid_uuid(payload.userId) or not 1 <= len(payload.paths) <= 10:
+        raise HTTPException(status_code=400, detail="Invalid user or reference count")
+    if any(not path.startswith(f"{payload.userId}/wardrobe/") or ".." in path for path in payload.paths):
+        raise HTTPException(status_code=400, detail="Invalid wardrobe reference")
+
+    storage = get_supabase().storage
+    signed_urls = []
+    for path in payload.paths:
+        target = f"{payload.userId}/kling-references/{hashlib.sha256(path.encode()).hexdigest()}.jpg"
+        raw = storage.from_("user-media").download(path)
+        image = prepare_kling_reference(raw)
+        storage.from_("generated").upload(
+            path=target, file=image, file_options={"content-type": "image/jpeg", "upsert": "true"},
+        )
+        signed = storage.from_("generated").create_signed_url(target, 600)
+        if not signed or not signed.get("signedUrl"):
+            raise HTTPException(status_code=502, detail="Could not sign Kling reference")
+        signed_urls.append(signed["signedUrl"])
+    return KlingReferencesResponse(signedUrls=signed_urls)
+
+
 @app.get("/health")
 def health_check():
     return {

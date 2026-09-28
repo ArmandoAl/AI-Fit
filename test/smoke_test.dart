@@ -69,7 +69,10 @@ void main() {
       expect(fromMap.subType, equals('shirt'));
       expect(fromMap.type, equals('top'));
       expect(fromMap.cutoutPath, equals('users/123/cutouts/item_123.webp'));
-      expect(fromMap.displayImageUrl, equals('users/123/cutouts/item_123.webp'));
+      expect(
+        fromMap.displayImageUrl,
+        equals('users/123/cutouts/item_123.webp'),
+      );
       expect(fromMap.colors, contains('white'));
     });
 
@@ -126,12 +129,9 @@ void main() {
 
       final prompt = IdentityConsistencyPrompt.buildTryOnPrompt(
         profile: profile,
-        hasBaseImage: true,
-        hasFaceAnchor: true,
-        garmentCount: 3,
       );
 
-      expect(prompt, contains('TASK: VIRTUAL_TRY_ON'));
+      expect(prompt, contains('TASK: GENERATE_NEW_OUTFIT_PHOTO'));
       expect(prompt, contains('Fair warm'));
       expect(prompt, contains('Oval'));
     });
@@ -146,18 +146,13 @@ void main() {
 
         final prompt = IdentityConsistencyPrompt.buildTryOnPrompt(
           profile: profile,
-          hasBaseImage: true,
-          hasFaceAnchor: false,
-          garmentCount: 0,
-          hasFlatlay: true,
           isOnePiece: true,
           accessoryDescriptions: const ['Silver Necklace', 'Black Handbag'],
         );
 
-        expect(prompt, contains('CONSOLIDATED_GARMENT_FLATLAY'));
-        expect(prompt, contains('FULL_BODY_ONE_PIECE'));
-        expect(prompt, contains('Do NOT render, paint, or hallucinate pants'));
-        expect(prompt, contains('[ACCESSORIES_STYLING]'));
+        expect(prompt, contains('single one-piece garment'));
+        expect(prompt, contains('do not add separate pants'));
+        expect(prompt, contains('Wear these accessories accurately'));
         expect(prompt, contains('Silver Necklace'));
         expect(prompt, contains('Black Handbag'));
       },
@@ -664,8 +659,11 @@ void main() {
 
       // Ninguna clave del payload debe quedar fuera de las columnas válidas de public.profiles
       for (final key in payload.keys) {
-        expect(validProfileColumns.contains(key), isTrue,
-            reason: 'Columna $key no permitida en public.profiles');
+        expect(
+          validProfileColumns.contains(key),
+          isTrue,
+          reason: 'Columna $key no permitida en public.profiles',
+        );
       }
 
       // Columnas prohibidas que causaban error 23503 / column does not exist
@@ -694,57 +692,65 @@ void main() {
       expect(fullRemainingSlots, equals(0));
     });
 
-    test('Gemini 3.6 Flash IdentityProfile JSON contract preserves all biometric fields', () {
-      final geminiResponseJson = <String, dynamic>{
-        'identity_version': 1,
-        'skin_tone': {
-          'primary': 'warm olive',
-          'undertone': 'golden',
-          'confidence': 0.94,
-        },
-        'face': {
-          'shape': 'oval',
-          'jaw_definition': 'defined',
-          'eye_shape': 'almond',
-          'nose_shape': 'straight',
-        },
-        'hair': {
-          'color': 'dark brown',
-          'style': 'short curly',
-          'density': 'thick',
-        },
-        'body': {
-          'type': 'athletic',
-          'height_estimate': '178cm',
-          'shoulder_width': 'broad',
-          'build': 'mesomorph',
-          'proportions': 'balanced',
-        },
-        'visual_characteristics': {
-          'contrast_level': 'medium-high',
-          'facial_sharpness': 'soft-sharp',
-          'overall_presence': 'confident-casual',
-        },
-      };
+    test(
+      'Gemini 3.6 Flash IdentityProfile JSON contract preserves all biometric fields',
+      () {
+        final geminiResponseJson = <String, dynamic>{
+          'identity_version': 1,
+          'skin_tone': {
+            'primary': 'warm olive',
+            'undertone': 'golden',
+            'confidence': 0.94,
+          },
+          'face': {
+            'shape': 'oval',
+            'jaw_definition': 'defined',
+            'eye_shape': 'almond',
+            'nose_shape': 'straight',
+          },
+          'hair': {
+            'color': 'dark brown',
+            'style': 'short curly',
+            'density': 'thick',
+          },
+          'body': {
+            'type': 'athletic',
+            'height_estimate': '178cm',
+            'shoulder_width': 'broad',
+            'build': 'mesomorph',
+            'proportions': 'balanced',
+          },
+          'visual_characteristics': {
+            'contrast_level': 'medium-high',
+            'facial_sharpness': 'soft-sharp',
+            'overall_presence': 'confident-casual',
+          },
+        };
 
-      final profile = IdentityProfile.fromJson(geminiResponseJson);
+        final profile = IdentityProfile.fromJson(geminiResponseJson);
 
-      expect(profile.identityVersion, equals(1));
-      expect(profile.skinTone?.primary, equals('warm olive'));
-      expect(profile.skinTone?.undertone, equals('golden'));
-      expect(profile.skinTone?.confidence, equals(0.94));
-      expect(profile.face?.shape, equals('oval'));
-      expect(profile.face?.jawDefinition, equals('defined'));
-      expect(profile.hair?.color, equals('dark brown'));
-      expect(profile.body?.type, equals('athletic'));
-      expect(profile.body?.build, equals('mesomorph'));
-      expect(profile.visualCharacteristics?.contrastLevel, equals('medium-high'));
-      expect(profile.isEmpty, isFalse);
+        expect(profile.identityVersion, equals(1));
+        expect(profile.skinTone?.primary, equals('warm olive'));
+        expect(profile.skinTone?.undertone, equals('golden'));
+        expect(profile.skinTone?.confidence, equals(0.94));
+        expect(profile.face?.shape, equals('oval'));
+        expect(profile.face?.jawDefinition, equals('defined'));
+        expect(profile.hair?.color, equals('dark brown'));
+        expect(profile.body?.type, equals('athletic'));
+        expect(profile.body?.build, equals('mesomorph'));
+        expect(
+          profile.visualCharacteristics?.contrastLevel,
+          equals('medium-high'),
+        );
+        expect(profile.isEmpty, isFalse);
 
-      final promptPreserve = IdentityConsistencyPrompt.preserveFromProfile(profile);
-      expect(promptPreserve, contains('warm olive skin tone'));
-      expect(promptPreserve, contains('oval face shape'));
-      expect(promptPreserve, contains('athletic body type'));
-    });
+        final promptPreserve = IdentityConsistencyPrompt.preserveFromProfile(
+          profile,
+        );
+        expect(promptPreserve, contains('warm olive skin tone'));
+        expect(promptPreserve, contains('oval face shape'));
+        expect(promptPreserve, contains('athletic body type'));
+      },
+    );
   });
 }

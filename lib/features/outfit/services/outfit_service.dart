@@ -27,11 +27,7 @@ class OutfitService {
   final SavedOutfitsRepository _savedOutfitsRepository =
       SavedOutfitsRepository();
 
-  _UserTryOnContext? _cachedTryOnContext;
-  String? _cachedTryOnUserId;
-
-  String? get _currentUserId =>
-      AppSupabaseClient.client?.auth.currentUser?.id;
+  String? get _currentUserId => AppSupabaseClient.client?.auth.currentUser?.id;
 
   /// Fases 1–3: genera outfits; persistencia Supabase en segundo plano.
   ///
@@ -73,11 +69,16 @@ class OutfitService {
           );
 
       if (filteredWardrobe.isEmpty) {
-        throw Exception('No items match your request. Try different criteria.');
+        throw Exception(
+          intent.requiredColorsByCategory.isNotEmpty
+              ? 'No hay prendas cuyos metadatos confirmen los colores obligatorios. Revisa o completa los colores del armario, o ajusta el pedido.'
+              : 'No items match your request. Try different criteria.',
+        );
       }
 
       final hasTwoPiece =
-          filteredWardrobe.tops.isNotEmpty && filteredWardrobe.bottoms.isNotEmpty;
+          filteredWardrobe.tops.isNotEmpty &&
+          filteredWardrobe.bottoms.isNotEmpty;
       final hasOnePiece = filteredWardrobe.onePieces.isNotEmpty;
       final hasShoes = filteredWardrobe.shoes.isNotEmpty;
 
@@ -88,10 +89,12 @@ class OutfitService {
           if (!hasShoes) 'calzado',
         ];
         throw Exception(
-          'Con este pedido no hay suficientes prendas en el armario filtrado. '
-          'Falta: ${missing.join(', ')}. Por ejemplo pediste negro pero quizá '
-          'no tienes esa combinación etiquetada, o el filtro lo excluyó. '
-          'Prueba otros colores, quita algún matiz o sube más prendas.',
+          intent.requiredColorsByCategory.isNotEmpty
+              ? 'No hay suficientes prendas cuyos metadatos confirmen los colores obligatorios del outfit. Revisa los colores registrados o ajusta el pedido.'
+              : 'Con este pedido no hay suficientes prendas en el armario filtrado. '
+                    'Falta: ${missing.join(', ')}. Por ejemplo pediste negro pero quizá '
+                    'no tienes esa combinación etiquetada, o el filtro lo excluyó. '
+                    'Prueba otros colores, quita algún matiz o sube más prendas.',
         );
       }
 
@@ -102,6 +105,10 @@ class OutfitService {
 
       final validOutfits = outfits
           .where((outfit) => outfit.hasCompleteLook)
+          .map((outfit) {
+            final uuid = GeneratedOutfit.ensureUuid(outfit.id);
+            return outfit.id == uuid ? outfit : outfit.copyWith(id: uuid);
+          })
           .toList();
 
       if (validOutfits.isEmpty) {
@@ -148,6 +155,7 @@ class OutfitService {
   Future<String?> generateTryOnForOutfit({
     required GeneratedOutfit outfit,
     required OutfitIntent intent,
+    String tryOnProvider = defaultTryOnProvider,
     Map<String, String>? wardrobeImageUrlsByItemId,
   }) async {
     final uid = _currentUserId;
@@ -156,26 +164,18 @@ class OutfitService {
     try {
       debugPrint('🖼️ Try-on for outfit ${outfit.id}');
 
-      final itemImageUrls = wardrobeImageUrlsByItemId != null
-          ? _resolveItemImageUrls(outfit, wardrobeImageUrlsByItemId)
-          : await _getItemImageUrls(outfit);
-
-      if (itemImageUrls.isEmpty) {
-        debugPrint('⚠️ No garment images for outfit ${outfit.id}');
-        return null;
-      }
+      if (outfit.itemIds.isEmpty) return null;
 
       final userContext = await _getUserTryOnContext(uid);
 
       final tryOnResult = await _tryOnService.generateTryOnImage(
         request: VirtualTryOnRequest(
           outfit: outfit,
-          itemImageUrls: itemImageUrls,
-          userBodyPhotoUrl: userContext.bodyPhotoUrl,
-          userFacePhotoUrl: userContext.facePhotoUrl,
           identityProfile: userContext.identityProfile,
+          scenePrompt: intent.userPrompt,
         ),
         userId: uid,
+        tryOnProvider: tryOnProvider,
       );
 
       final url = tryOnResult.generatedImageUrl;
@@ -236,76 +236,17 @@ class OutfitService {
     };
   }
 
-  static List<String> _resolveItemImageUrls(
-    GeneratedOutfit outfit,
-    Map<String, String> wardrobeImageUrlsByItemId,
-  ) {
-    final urls = <String>[];
-    for (final itemId in outfit.itemIds) {
-      final url = wardrobeImageUrlsByItemId[itemId];
-      if (url != null && url.isNotEmpty) {
-        urls.add(url);
-      }
-    }
-    return urls;
-  }
-
-  Future<List<String>> _getItemImageUrls(GeneratedOutfit outfit) async {
-    final urls = <String>[];
-
-    if (!AppSupabaseClient.isInitialized || AppSupabaseClient.client == null) {
-      return urls;
-    }
-
-    try {
-      final rows = await AppSupabaseClient.client!
-          .from('wardrobe_items')
-          .select('source_path')
-          .inFilter('id', outfit.itemIds);
-
-      for (final r in rows) {
-        final path = r['source_path'] as String?;
-        if (path != null && path.isNotEmpty) {
-          urls.add(path);
-        }
-      }
-    } catch (e) {
-      debugPrint('⚠️ Failed to get garment image URLs from Supabase: $e');
-    }
-
-    return urls;
-  }
-
   Future<_UserTryOnContext> _getUserTryOnContext(String userId) async {
-    if (_cachedTryOnUserId == userId && _cachedTryOnContext != null) {
-      return _cachedTryOnContext!;
-    }
-
     try {
       final profileData = await _profileRepository.getUserProfile(userId);
       if (profileData == null) {
-        _cachedTryOnContext = const _UserTryOnContext();
-        _cachedTryOnUserId = userId;
-        return _cachedTryOnContext!;
+        return const _UserTryOnContext();
       }
 
       final identityProfile = IdentityProfile.fromFirestoreUser(profileData);
-
-      final bodyPhoto = profileData['bodyPhotos'] != null
-          ? (profileData['bodyPhotos'] as List<dynamic>).firstOrNull?.toString()
-          : null;
-
-      final facePhoto = profileData['facePhotos'] != null
-          ? (profileData['facePhotos'] as List<dynamic>).firstOrNull?.toString()
-          : null;
-
-      _cachedTryOnContext = _UserTryOnContext(
-        bodyPhotoUrl: bodyPhoto,
-        facePhotoUrl: facePhoto,
+      return _UserTryOnContext(
         identityProfile: identityProfile.isEmpty ? null : identityProfile,
       );
-      _cachedTryOnUserId = userId;
-      return _cachedTryOnContext!;
     } catch (e) {
       debugPrint('⚠️ Failed to get user try-on context: $e');
       return const _UserTryOnContext();
@@ -339,15 +280,9 @@ class OutfitService {
 }
 
 class _UserTryOnContext {
-  final String? bodyPhotoUrl;
-  final String? facePhotoUrl;
   final IdentityProfile? identityProfile;
 
-  const _UserTryOnContext({
-    this.bodyPhotoUrl,
-    this.facePhotoUrl,
-    this.identityProfile,
-  });
+  const _UserTryOnContext({this.identityProfile});
 }
 
 /// Resultado de la generación de outfits

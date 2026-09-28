@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -16,13 +17,20 @@ import '../domain/wardrobe_item_model.dart';
 import 'wardrobe_repository.dart';
 
 class WardrobeRepositoryImpl implements WardrobeRepository {
+  static final _itemProcessedController =
+      StreamController<WardrobeProcessedUpdate>.broadcast();
+
+  @override
+  Stream<WardrobeProcessedUpdate> get onItemProcessed =>
+      _itemProcessedController.stream;
+
   final AIService _aiService;
   final DeepSeekService _gateway;
   final StorageService _storageService = StorageService();
 
   WardrobeRepositoryImpl({AIService? aiService, DeepSeekService? gateway})
-      : _aiService = aiService ?? GatewayAIServiceImpl(),
-        _gateway = gateway ?? const DeepSeekService();
+    : _aiService = aiService ?? GatewayAIServiceImpl(),
+      _gateway = gateway ?? const DeepSeekService();
 
   SupabaseClient get _supabase {
     final client = AppSupabaseClient.client;
@@ -39,12 +47,19 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
   /// se procesa sin cutout, sin bloquear el flujo de alta de la prenda.
   Future<String?> _generateCutoutBase64(AppImage image) async {
     try {
-      final cutoutBytes = await AppleVisionBackgroundRemovalService.removeBackground(image.bytes);
+      final cutoutBytes =
+          await AppleVisionBackgroundRemovalService.removeBackground(
+            image.bytes,
+          );
       if (cutoutBytes == null) return null;
-      debugPrint('✅ [WardrobeRepository] Apple Vision cutout generado on-device (${cutoutBytes.length} bytes)');
+      debugPrint(
+        '✅ [WardrobeRepository] Apple Vision cutout generado on-device (${cutoutBytes.length} bytes)',
+      );
       return base64Encode(cutoutBytes);
     } catch (e) {
-      debugPrint('⚠️ [WardrobeRepository] Apple Vision cutout failed (non-critical): $e');
+      debugPrint(
+        '⚠️ [WardrobeRepository] Apple Vision cutout failed (non-critical): $e',
+      );
       return null;
     }
   }
@@ -58,7 +73,9 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
     }
 
     try {
-      debugPrint('📦 [WardrobeRepository -> Supabase] Loading items for user: $uid');
+      debugPrint(
+        '📦 [WardrobeRepository -> Supabase] Loading items for user: $uid',
+      );
       final response = await _supabase
           .from('wardrobe_items')
           .select()
@@ -66,11 +83,16 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
           .order('created_at', ascending: false);
 
       final items = (response as List)
-          .map((row) =>
-              WardrobeItem.fromSupabase(Map<String, dynamic>.from(row as Map)))
+          .map(
+            (row) => WardrobeItem.fromSupabase(
+              Map<String, dynamic>.from(row as Map),
+            ),
+          )
           .toList();
 
-      debugPrint('✅ [WardrobeRepository -> Supabase] Loaded ${items.length} wardrobe items');
+      debugPrint(
+        '✅ [WardrobeRepository -> Supabase] Loaded ${items.length} wardrobe items',
+      );
       return items;
     } catch (e) {
       debugPrint('❌ [WardrobeRepository -> Supabase] Error loading items: $e');
@@ -118,7 +140,9 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
     // Se utiliza timeout acotado de 12s para no bloquear la app si el worker se encuentra ocupado
     try {
       final cutoutBase64 = await _generateCutoutBase64(image);
-      debugPrint('✂️ [WardrobeRepository] Invoking image-worker (CLIP ViT-B-32) for item: $itemId');
+      debugPrint(
+        '✂️ [WardrobeRepository] Invoking image-worker (CLIP ViT-B-32) for item: $itemId',
+      );
       final processResult = await _gateway.processWardrobeItem(
         itemId: itemId,
         userId: uid,
@@ -127,12 +151,20 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
         timeout: const Duration(seconds: 12),
         maxRetries: 1,
       );
-      debugPrint('✅ [WardrobeRepository] image-worker processing completed: $processResult');
+      debugPrint(
+        '✅ [WardrobeRepository] image-worker processing completed: $processResult',
+      );
+      _itemProcessedController.add(WardrobeProcessedUpdate(itemId: itemId));
     } catch (workerErr) {
-      debugPrint('⚠️ [WardrobeRepository] image-worker processing error or timeout (raw item preserved as fallback): $workerErr');
+      debugPrint(
+        '⚠️ [WardrobeRepository] image-worker processing error or timeout (raw item preserved as fallback): $workerErr',
+      );
       // Heurística: visibilidad del estado del sistema — sin esto el item quedaba
       // en 'processing' para siempre si la llamada nunca llegó a completarse en el worker.
       await _markProcessingFailed(itemId, workerErr.toString());
+      _itemProcessedController.add(
+        WardrobeProcessedUpdate(itemId: itemId, status: 'failed'),
+      );
     }
   }
 
@@ -141,6 +173,7 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
     required String type,
     required String subType,
     String? brand,
+    Uint8List? nativeCutoutBytes,
   }) async {
     final uid = _getCurrentUserId();
     if (uid == null) throw Exception("User not logged in");
@@ -167,11 +200,13 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
         promptInstruction: WardrobeAnalysisPrompt.colorsAndStyleOnly,
       );
 
-      colors = (aiData['colors'] as List<dynamic>?)
+      colors =
+          (aiData['colors'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           [];
-      styleTags = (aiData['styleTags'] as List<dynamic>?)
+      styleTags =
+          (aiData['styleTags'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           [];
@@ -196,13 +231,19 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
       'processing_status': 'processing',
       'created_at': DateTime.now().toUtc().toIso8601String(),
     });
-    debugPrint('✅ [WardrobeRepository -> Supabase] Item with data added: $itemId');
+    debugPrint(
+      '✅ [WardrobeRepository -> Supabase] Item with data added: $itemId',
+    );
 
     // Cutout on-device (Apple Vision, iOS-only) + extracción de embedding CLIP (clip-ViT-B-32) en el worker.
     // Se utiliza timeout acotado de 12s para no bloquear la app si el worker se encuentra ocupado
     try {
-      final cutoutBase64 = await _generateCutoutBase64(image);
-      debugPrint('✂️ [WardrobeRepository] Invoking image-worker (CLIP ViT-B-32) for item: $itemId');
+      final cutoutBase64 = nativeCutoutBytes != null
+          ? base64Encode(nativeCutoutBytes)
+          : await _generateCutoutBase64(image);
+      debugPrint(
+        '✂️ [WardrobeRepository] Invoking image-worker (CLIP ViT-B-32) for item: $itemId',
+      );
       final processResult = await _gateway.processWardrobeItem(
         itemId: itemId,
         userId: uid,
@@ -211,12 +252,20 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
         timeout: const Duration(seconds: 12),
         maxRetries: 1,
       );
-      debugPrint('✅ [WardrobeRepository] image-worker processing completed: $processResult');
+      debugPrint(
+        '✅ [WardrobeRepository] image-worker processing completed: $processResult',
+      );
+      _itemProcessedController.add(WardrobeProcessedUpdate(itemId: itemId));
     } catch (workerErr) {
-      debugPrint('⚠️ [WardrobeRepository] image-worker processing error or timeout (raw item preserved as fallback): $workerErr');
+      debugPrint(
+        '⚠️ [WardrobeRepository] image-worker processing error or timeout (raw item preserved as fallback): $workerErr',
+      );
       // Heurística: visibilidad del estado del sistema — sin esto el item quedaba
       // en 'processing' para siempre si la llamada nunca llegó a completarse en el worker.
       await _markProcessingFailed(itemId, workerErr.toString());
+      _itemProcessedController.add(
+        WardrobeProcessedUpdate(itemId: itemId, status: 'failed'),
+      );
     }
   }
 
@@ -238,7 +287,9 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
         timeout: const Duration(seconds: 12),
         maxRetries: 1,
       );
-      debugPrint('✅ [WardrobeRepository] Retry succeeded for ${item.id}: $processResult');
+      debugPrint(
+        '✅ [WardrobeRepository] Retry succeeded for ${item.id}: $processResult',
+      );
     } catch (e) {
       debugPrint('❌ [WardrobeRepository] Retry failed for ${item.id}: $e');
       await _markProcessingFailed(item.id, e.toString());
@@ -253,7 +304,9 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
           .update({'processing_status': 'failed', 'processing_error': error})
           .eq('id', itemId);
     } catch (e) {
-      debugPrint('⚠️ [WardrobeRepository] Could not mark item $itemId as failed: $e');
+      debugPrint(
+        '⚠️ [WardrobeRepository] Could not mark item $itemId as failed: $e',
+      );
     }
   }
 
@@ -275,4 +328,32 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
       throw Exception('Failed to update wardrobe item: $e');
     }
   }
+
+  @override
+  Future<void> deleteWardrobeItems(List<String> ids) async {
+    final uid = _getCurrentUserId();
+    if (uid == null) throw Exception('User not logged in');
+    if (ids.isEmpty) return;
+    try {
+      // outfit_items uses ON DELETE RESTRICT, so remove this user's saved
+      // outfit references before deleting the wardrobe rows.
+      await _supabase.from('outfit_items').delete().inFilter('wardrobe_item_id', ids);
+      final deleted = await _supabase
+          .from('wardrobe_items')
+          .delete()
+          .eq('user_id', uid)
+          .inFilter('id', ids)
+          .select('id');
+      if ((deleted as List).length != ids.toSet().length) {
+        throw Exception('No se pudieron eliminar todas las prendas seleccionadas');
+      }
+      debugPrint('✅ [WardrobeRepository -> Supabase] Deleted ${ids.length} items');
+    } catch (e) {
+      debugPrint('❌ [WardrobeRepository -> Supabase] Error deleting items: $e');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> deleteWardrobeItem(String id) => deleteWardrobeItems([id]);
 }

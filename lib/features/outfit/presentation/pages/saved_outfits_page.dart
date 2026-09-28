@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/l10n/app_strings_es.dart';
-import '../../../../core/widgets/app_network_image.dart';
-import '../../../wardrobe/domain/wardrobe_palette.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_page_app_bar.dart';
 import '../../../../core/widgets/atelier_empty_state.dart';
+import '../../../../core/widgets/saved_outfit_card.dart';
 import '../bloc/saved_outfits_bloc.dart';
 import '../bloc/saved_outfits_event.dart';
 import '../bloc/saved_outfits_state.dart';
-import '../../domain/saved_outfit_model.dart';
+import '../widgets/outfit_detail_sheet.dart';
+import '../../../wardrobe/domain/wardrobe_palette.dart';
 
 /// Página para mostrar outfits guardados
 class SavedOutfitsPage extends StatefulWidget {
@@ -35,12 +33,12 @@ class _SavedOutfitsPageState extends State<SavedOutfitsPage> {
 
   void _applyFilters() {
     context.read<SavedOutfitsBloc>().add(
-          LoadSavedOutfits(
-            filterByOccasion: _selectedOccasion,
-            filterBySeason: _selectedSeason,
-            onlyFavorites: _showFavoritesOnly ? true : null,
-          ),
-        );
+      LoadSavedOutfits(
+        filterByOccasion: _selectedOccasion,
+        filterBySeason: _selectedSeason,
+        onlyFavorites: _showFavoritesOnly ? true : null,
+      ),
+    );
   }
 
   @override
@@ -68,7 +66,11 @@ class _SavedOutfitsPageState extends State<SavedOutfitsPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error_outline, size: 64, color: AppColors.error),
+                  const Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: AppColors.error,
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     'Error: ${state.message}',
@@ -136,16 +138,37 @@ class _SavedOutfitsPageState extends State<SavedOutfitsPage> {
                 Expanded(
                   child: GridView.builder(
                     padding: const EdgeInsets.all(16),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 0.75,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                          childAspectRatio: 0.72,
+                        ),
                     itemCount: state.outfits.length,
                     itemBuilder: (context, index) {
                       final outfit = state.outfits[index];
-                      return _buildOutfitCard(outfit);
+                      return SavedOutfitCard(
+                        outfit: outfit,
+                        onTap: () {
+                          context.read<SavedOutfitsBloc>().add(
+                            ViewOutfit(outfitId: outfit.id),
+                          );
+                          OutfitDetailSheet.show(
+                            context,
+                            outfit,
+                            state.outfits,
+                          );
+                        },
+                        onToggleFavorite: () {
+                          context.read<SavedOutfitsBloc>().add(
+                            ToggleFavorite(
+                              outfitId: outfit.id,
+                              isFavorite: !outfit.isFavorite,
+                            ),
+                          );
+                        },
+                      );
                     },
                   ),
                 ),
@@ -155,172 +178,6 @@ class _SavedOutfitsPageState extends State<SavedOutfitsPage> {
 
           return const SizedBox.shrink();
         },
-      ),
-    );
-  }
-
-  Widget _buildOutfitCard(SavedOutfit outfit) {
-    return GestureDetector(
-      onTap: () {
-        // Incrementar view count
-        context.read<SavedOutfitsBloc>().add(ViewOutfit(outfitId: outfit.id));
-        // TODO: Navegar a vista de detalle
-        _showOutfitDetails(outfit);
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-          boxShadow: AppTheme.ambientCardShadow,
-        ),
-        child: Card(
-          clipBehavior: Clip.antiAlias,
-          margin: EdgeInsets.zero,
-          elevation: 0,
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  AppNetworkImage(
-                      imageUrl: outfit.tryOnImageUrl,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      placeholder: Container(
-                        color: Colors.grey[200],
-                        child: const Center(
-                          child: CircularProgressIndicator(),
-                        ),
-                      ),
-                      errorWidget: Container(
-                        color: AppColors.surfaceContainer,
-                        child: const Icon(Icons.error_outline),
-                      ),
-                    ),
-                  if (outfit.isFavorite)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: const BoxDecoration(
-                          color: AppColors.secondary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.favorite,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-              decoration: const BoxDecoration(
-                color: AppColors.surfaceContainerLow,
-                border: Border(
-                  top: BorderSide(color: AppColors.border),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.08),
-                          borderRadius:
-                              BorderRadius.circular(AppTheme.radiusMd),
-                        ),
-                        child: Text(
-                          AppStringsEs.matchPercent(outfit.matchPercentage),
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: Icon(
-                          outfit.isFavorite
-                              ? Icons.favorite
-                              : Icons.favorite_border,
-                          color: outfit.isFavorite
-                              ? AppColors.primary
-                              : AppColors.tertiary,
-                          size: 20,
-                        ),
-                        onPressed: () {
-                          context.read<SavedOutfitsBloc>().add(
-                                ToggleFavorite(
-                                  outfitId: outfit.id,
-                                  isFavorite: !outfit.isFavorite,
-                                ),
-                              );
-                        },
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Tags
-                  if (outfit.colors.isNotEmpty || outfit.styleTags.isNotEmpty)
-                    Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      children: [
-                        ...outfit.colors.take(2).map(
-                              (color) => Chip(
-                                label: Text(
-                                  WardrobePalette.labelColor(color),
-                                  style: const TextStyle(fontSize: 10),
-                                ),
-                                backgroundColor: AppColors.primary.withValues(
-                                  alpha: 0.1,
-                                ),
-                                padding: EdgeInsets.zero,
-                                labelPadding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                ),
-                              ),
-                            ),
-                        ...outfit.styleTags.take(1).map(
-                              (tag) => Chip(
-                                label: Text(
-                                  WardrobePalette.labelStyleTag(tag),
-                                  style: const TextStyle(fontSize: 10),
-                                ),
-                                backgroundColor: AppColors.secondary.withValues(
-                                  alpha: 0.1,
-                                ),
-                                padding: EdgeInsets.zero,
-                                labelPadding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                ),
-                              ),
-                            ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        ),
       ),
     );
   }
@@ -438,101 +295,6 @@ class _SavedOutfitsPageState extends State<SavedOutfitsPage> {
               _applyFilters();
             },
             child: const Text('Apply'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showOutfitDetails(SavedOutfit outfit) {
-    AppBottomSheet.showDraggable(
-      context: context,
-      title: 'Outfit details',
-      subtitle: 'Saved try-on look',
-      builder: (scrollController) => ListView(
-        controller: scrollController,
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  AppStringsEs.matchPercent(outfit.matchPercentage),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppColors.tertiary,
-                      ),
-                ),
-              ),
-              IconButton(
-                icon: Icon(
-                  outfit.isFavorite ? Icons.favorite : Icons.favorite_border,
-                  color: outfit.isFavorite
-                      ? AppColors.primary
-                      : AppColors.tertiary,
-                ),
-                onPressed: () {
-                  context.read<SavedOutfitsBloc>().add(
-                        ToggleFavorite(
-                          outfitId: outfit.id,
-                          isFavorite: !outfit.isFavorite,
-                        ),
-                      );
-                  Navigator.pop(context);
-                },
-              ),
-            ],
-          ),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-            child: AppNetworkImage(
-              imageUrl: outfit.tryOnImageUrl,
-              width: double.infinity,
-              height: 400,
-              fit: BoxFit.cover,
-            ),
-          ),
-          const SizedBox(height: 24),
-          if (outfit.outfit.displayExplanation.isNotEmpty) ...[
-            Text(
-              AppStringsEs.whyThisWorks,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              outfit.outfit.displayExplanation,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppColors.secondary,
-                    height: 1.5,
-                  ),
-            ),
-            const SizedBox(height: 24),
-          ],
-          Text(
-            AppStringsEs.tags,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (outfit.occasion != null)
-                Chip(
-                  label: Text(
-                    WardrobePalette.labelOccasion(outfit.occasion!),
-                  ),
-                ),
-              ...outfit.colors.map(
-                (c) => Chip(label: Text(WardrobePalette.labelColor(c))),
-              ),
-              ...outfit.styleTags.map(
-                (t) => Chip(label: Text(WardrobePalette.labelStyleTag(t))),
-              ),
-            ],
           ),
         ],
       ),

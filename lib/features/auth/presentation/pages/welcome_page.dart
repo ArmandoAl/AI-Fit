@@ -63,9 +63,12 @@ class _WelcomePageState extends State<WelcomePage> {
   }
 
   Future<void> _onGetStarted() async {
-    if (!(await OnboardingPrefs.hasSeenTips())) {
+    final seen = await OnboardingPrefs.hasSeenTips();
+    if (!mounted) return;
+    if (!seen) {
       await AppTutorialOverlay.show(context);
     }
+    if (!mounted) return;
     await _finishTips(goToPhotoSetup: true);
   }
 

@@ -16,7 +16,11 @@ class DeepSeekService {
   final int maxRetries;
   final double backoffBaseSeconds;
   final Future<void> Function(Duration duration)? customDelay;
-  final Future<FunctionResponse> Function(String function, Map<String, dynamic> body)? customInvoker;
+  final Future<FunctionResponse> Function(
+    String function,
+    Map<String, dynamic> body,
+  )?
+  customInvoker;
 
   const DeepSeekService({
     this.timeout = const Duration(seconds: 45),
@@ -70,7 +74,8 @@ class DeepSeekService {
     void Function(int attempt, Duration delay, dynamic error)? onRetry,
   }) async {
     final client = AppSupabaseClient.client;
-    if (customInvoker == null && (client == null || !AppSupabaseClient.isInitialized)) {
+    if (customInvoker == null &&
+        (client == null || !AppSupabaseClient.isInitialized)) {
       throw Exception(
         'AppSupabaseClient is not initialized or configured. Server-side AI gateway unavailable.',
       );
@@ -108,7 +113,8 @@ class DeepSeekService {
 
         if (response.status != 200) {
           final isTransient = isTransientStatusCode(response.status);
-          final errorMsg = 'ai-router returned HTTP ${response.status}: ${response.data}';
+          final errorMsg =
+              'ai-router returned HTTP ${response.status}: ${response.data}';
           if (isTransient && attempt < effectiveMaxRetries - 1) {
             throw _TransientGatewayException(response.status, errorMsg);
           }
@@ -131,7 +137,9 @@ class DeepSeekService {
           }
         }
 
-        throw Exception('Unexpected response payload format from ai-router: $data');
+        throw Exception(
+          'Unexpected response payload format from ai-router: $data',
+        );
       } catch (e, st) {
         lastError = e;
         lastStackTrace = st;
@@ -164,7 +172,10 @@ class DeepSeekService {
     }
 
     if (lastError != null) {
-      Error.throwWithStackTrace(lastError, lastStackTrace ?? StackTrace.current);
+      Error.throwWithStackTrace(
+        lastError,
+        lastStackTrace ?? StackTrace.current,
+      );
     }
     throw Exception('ai-router invocation failed after $maxRetries attempts');
   }
@@ -265,23 +276,22 @@ class DeepSeekService {
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
       } else if (decoded is List) {
-        return decoded
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
       }
     }
 
-    throw Exception('No valid outfits list found in ai-router compose_outfits response');
+    throw Exception(
+      'No valid outfits list found in ai-router compose_outfits response',
+    );
   }
 
   /// Genera una imagen de Virtual Try-On a través del adaptador visual de ai-router.
   /// En el flujo optimizado de 2 imágenes (Tarea 3.4), si se proporciona [garmentFlatlayUrl],
   /// el adaptador visual consume únicamente la imagen de identidad y el flat-lay compuesto.
   Future<Map<String, dynamic>> generateTryOn({
-    required String identityImageUrl,
-    required List<String> garmentImageUrls,
-    String? garmentFlatlayUrl,
-    List<Map<String, String>>? items,
+    required List<String> wardrobeItemIds,
+    String tryOnProvider = 'seedream',
+    String? scenePrompt,
     required String prompt,
     String? outfitId,
     String? idempotencyKey,
@@ -289,10 +299,9 @@ class DeepSeekService {
   }) async {
     final body = <String, dynamic>{
       'action': 'generate_tryon',
-      'identityImageUrl': identityImageUrl,
-      'garmentImageUrls': garmentImageUrls,
-      if (garmentFlatlayUrl != null) 'garmentFlatlayUrl': garmentFlatlayUrl,
-      if (items != null) 'items': items,
+      'wardrobeItemIds': wardrobeItemIds,
+      'tryOnProvider': tryOnProvider,
+      if (scenePrompt != null) 'scenePrompt': scenePrompt,
       'prompt': prompt,
       if (outfitId != null) 'outfitId': outfitId,
       if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
@@ -301,7 +310,9 @@ class DeepSeekService {
     return invokeGateway(
       body,
       idempotencyKey: idempotencyKey,
-      timeoutOverride: timeout,
+      timeoutOverride: timeout ?? const Duration(seconds: 120),
+      // Prevent a timed-out VTON request from submitting a second paid generation.
+      maxRetriesOverride: 1,
     );
   }
 
@@ -312,14 +323,11 @@ class DeepSeekService {
     required List<Map<String, String>> items,
     Duration timeout = const Duration(seconds: 30),
   }) async {
-    final res = await invokeGateway(
-      {
-        'action': 'composite_flatlay',
-        'outfitId': outfitId,
-        'items': items,
-      },
-      timeoutOverride: timeout,
-    );
+    final res = await invokeGateway({
+      'action': 'composite_flatlay',
+      'outfitId': outfitId,
+      'items': items,
+    }, timeoutOverride: timeout);
     return res;
   }
 
@@ -399,17 +407,14 @@ class DeepSeekService {
     Duration timeout = const Duration(seconds: 35),
   }) async {
     final b64 = base64Encode(imageBytes);
-    final result = await invokeGateway(
-      {
-        'action': 'analyze_image',
-        'prompt': promptInstruction,
-        'imageBase64': b64,
-        'mimeType': mimeType,
-        if (model != null) 'model': model,
-        'jsonMode': true,
-      },
-      timeoutOverride: timeout,
-    );
+    final result = await invokeGateway({
+      'action': 'analyze_image',
+      'prompt': promptInstruction,
+      'imageBase64': b64,
+      'mimeType': mimeType,
+      if (model != null) 'model': model,
+      'jsonMode': true,
+    }, timeoutOverride: timeout);
 
     if (result['jsonData'] is Map<String, dynamic>) {
       return result['jsonData'] as Map<String, dynamic>;
@@ -417,7 +422,10 @@ class DeepSeekService {
 
     final rawContent = result['content'] as String?;
     if (rawContent != null && rawContent.isNotEmpty) {
-      final clean = rawContent.replaceAll('```json', '').replaceAll('```', '').trim();
+      final clean = rawContent
+          .replaceAll('```json', '')
+          .replaceAll('```', '')
+          .trim();
       return jsonDecode(clean) as Map<String, dynamic>;
     }
 
@@ -458,8 +466,6 @@ class _TransientGatewayException implements Exception {
   _TransientGatewayException(this.status, this.message);
 
   @override
-  String toString() => '_TransientGatewayException(status: $status, message: $message)';
+  String toString() =>
+      '_TransientGatewayException(status: $status, message: $message)';
 }
-
-
-

@@ -6,17 +6,23 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/utils/keyboard_utils.dart';
 import '../../../../core/widgets/app_page_app_bar.dart';
+import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/widgets/shell_bottom_insets.dart';
 import '../bloc/chat_bloc.dart';
 import '../bloc/chat_event.dart';
 import '../bloc/chat_state.dart';
 import '../../domain/chat_models.dart';
+import '../../../outfit/presentation/bloc/saved_outfits_bloc.dart';
+import '../../../outfit/presentation/bloc/saved_outfits_event.dart';
+import '../../../outfit/presentation/bloc/saved_outfits_state.dart';
 import '../widgets/stylist_chat_bubble.dart';
 import '../widgets/stylist_generate_cta_card.dart';
 import '../widgets/stylist_generation_loading_card.dart';
 import '../widgets/stylist_outfit_carousel.dart';
 import '../widgets/stylist_outfit_preview_card.dart';
 import '../widgets/stylist_typing_indicator.dart';
+import '../../../wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import '../../../wardrobe/presentation/pages/wardrobe_item_detail_page.dart';
 
 /// Ítem normalizado para el ListView del chat (agrupa outfits en carrusel).
 sealed class _ChatListEntry {}
@@ -41,6 +47,7 @@ class StylistPage extends StatefulWidget {
 class _StylistPageState extends State<StylistPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  ChatAttachment? _attachment;
 
   @override
   void initState() {
@@ -216,11 +223,14 @@ class _StylistPageState extends State<StylistPage> {
   ) {
     return switch (entry) {
       _ChatOutfitCarouselEntry(:final previews) => StylistOutfitCarousel(
-          previews: previews,
-          onPreviewTap: (p) => _showOutfitSheet(context, p),
-          onTryOnRequest: (p) => _requestTryOn(context, p),
-        ),
-      _ChatMessageEntry(:final message) => _buildMessage(context, message, state),
+        previews: previews,
+        onPreviewTap: (p) => _showOutfitSheet(context, p, previews),
+      ),
+      _ChatMessageEntry(:final message) => _buildMessage(
+        context,
+        message,
+        state,
+      ),
     };
   }
 
@@ -232,13 +242,19 @@ class _StylistPageState extends State<StylistPage> {
     switch (msg.type) {
       case ChatMessageType.text:
       case ChatMessageType.generationError:
-        return StylistChatBubble(message: msg);
+        return Column(
+          children: [
+            if (msg.attachment != null)
+              _AttachmentPreview(attachment: msg.attachment!),
+            StylistChatBubble(message: msg),
+          ],
+        );
       case ChatMessageType.ctaGenerate:
         return StylistGenerateCtaCard(
           isLoading: state.isGenerating,
           onGenerate: () => context.read<ChatBloc>().add(
-                const ChatGenerateOutfitRequested(generateTryOn: true),
-              ),
+            const ChatGenerateOutfitRequested(generateTryOn: false),
+          ),
         );
       case ChatMessageType.generationLoading:
         return StylistGenerationLoadingCard(phase: msg.generationPhase);
@@ -246,7 +262,7 @@ class _StylistPageState extends State<StylistPage> {
         if (msg.outfitPreview == null) return const SizedBox.shrink();
         return StylistOutfitCarousel(
           previews: [msg.outfitPreview!],
-          onPreviewTap: (p) => _showOutfitSheet(context, p),
+          onPreviewTap: (p) => _showOutfitSheet(context, p, [p]),
         );
       case ChatMessageType.typing:
         return const StylistTypingIndicator();
@@ -255,25 +271,66 @@ class _StylistPageState extends State<StylistPage> {
 
   void _requestTryOn(BuildContext context, ChatOutfitPreview preview) {
     context.read<ChatBloc>().add(
-          ChatTryOnForOutfitRequested(preview.outfit.id),
-        );
+      ChatTryOnForOutfitRequested(preview.outfit.id),
+    );
   }
 
-  void _showOutfitSheet(BuildContext context, ChatOutfitPreview preview) {
+  void _showOutfitSheet(
+    BuildContext context,
+    ChatOutfitPreview preview,
+    List<ChatOutfitPreview> previews,
+  ) {
+    var selected = previews.indexOf(preview);
     AppBottomSheet.showDraggable(
       context: context,
       title: AppStringsEs.lookDetails,
       subtitle: 'Seleccionado para tu armario',
-      builder: (scrollController) => ListView(
-        controller: scrollController,
-        padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
-        children: [
-          StylistOutfitPreviewCard(
-            preview: preview,
-            compact: false,
-            onTryOnRequest: () => _requestTryOn(context, preview),
-          ),
-        ],
+      builder: (scrollController) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final selectedPreview = previews[selected];
+          final chatState = context.watch<ChatBloc>().state;
+          final current = chatState is ChatLoaded
+              ? chatState.messages
+                        .where(
+                          (message) =>
+                              message.outfitPreview?.outfit.id ==
+                              selectedPreview.outfit.id,
+                        )
+                        .map((message) => message.outfitPreview!)
+                        .firstOrNull ??
+                    selectedPreview
+              : selectedPreview;
+          return GestureDetector(
+            onHorizontalDragEnd: previews.length < 2
+                ? null
+                : (details) {
+                    final next =
+                        selected + (details.primaryVelocity! < 0 ? 1 : -1);
+                    if (next >= 0 && next < previews.length) {
+                      setSheetState(() => selected = next);
+                    }
+                  },
+            child: ListView(
+              key: ValueKey(current.outfit.id),
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
+              children: [
+                if (previews.length > 1)
+                  Center(
+                    child: Text(
+                      '${selected + 1} / ${previews.length} · desliza para cambiar',
+                    ),
+                  ),
+                _OutfitGarments(preview: current),
+                StylistOutfitPreviewCard(
+                  preview: current,
+                  compact: false,
+                  onTryOnRequest: () => _requestTryOn(context, current),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -291,35 +348,50 @@ class _StylistPageState extends State<StylistPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            IconButton(
+              tooltip: 'Adjuntar prenda o look',
+              onPressed: disabled ? null : _chooseAttachment,
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+            ),
             Expanded(
-              child: TextField(
-                controller: _controller,
-                enabled: !disabled,
-                maxLines: 4,
-                minLines: 1,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  hintText: AppStringsEs.describeOccasionHint,
-                  filled: true,
-                  fillColor: AppColors.background,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(22),
-                    borderSide: const BorderSide(color: AppColors.border),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_attachment != null)
+                    _AttachmentPreview(
+                      attachment: _attachment!,
+                      onRemove: () => setState(() => _attachment = null),
+                    ),
+                  TextField(
+                    controller: _controller,
+                    enabled: !disabled,
+                    maxLines: 4,
+                    minLines: 1,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      hintText: AppStringsEs.describeOccasionHint,
+                      filled: true,
+                      fillColor: AppColors.background,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(22),
+                        borderSide: const BorderSide(color: AppColors.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(22),
+                        borderSide: const BorderSide(color: AppColors.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(22),
+                        borderSide: const BorderSide(color: AppColors.gold),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                    ),
+                    onSubmitted: disabled ? null : (_) => _sendMessage(),
                   ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(22),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(22),
-                    borderSide: const BorderSide(color: AppColors.gold),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 14,
-                  ),
-                ),
-                onSubmitted: disabled ? null : (_) => _sendMessage(),
+                ],
               ),
             ),
             const SizedBox(width: 10),
@@ -343,9 +415,210 @@ class _StylistPageState extends State<StylistPage> {
 
   void _sendMessage() {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
-    context.read<ChatBloc>().add(ChatMessageSent(text));
+    if (text.isEmpty && _attachment == null) return;
+    context.read<ChatBloc>().add(
+      ChatMessageSent(text, attachment: _attachment),
+    );
     _controller.clear();
+    setState(() => _attachment = null);
+  }
+
+  Future<void> _chooseAttachment() async {
+    final wardrobe = context.read<WardrobeBloc>().state.allItems;
+    final savedBloc = context.read<SavedOutfitsBloc>();
+    if (savedBloc.state is! SavedOutfitsLoaded) {
+      savedBloc.add(LoadSavedOutfits());
+    }
+    final selected = await showModalBottomSheet<ChatAttachment>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => DefaultTabController(
+        length: 2,
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * 0.65,
+          child: Column(
+            children: [
+              const TabBar(
+                tabs: [
+                  Tab(text: 'Prendas'),
+                  Tab(text: 'Looks'),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    ListView(
+                      children: [
+                        for (final item in wardrobe)
+                          ListTile(
+                            leading: SizedBox(
+                              width: 44,
+                              height: 52,
+                              child: AppNetworkImage(
+                                imageUrl: item.displayImageUrl,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            title: Text(item.name),
+                            subtitle: Text(item.subType),
+                            onTap: () => Navigator.pop(
+                              sheetContext,
+                              ChatAttachment(
+                                title: item.name,
+                                imageUrl: item.displayImageUrl,
+                                description:
+                                    'Prenda del armario: ${item.name}; tipo ${item.subType}; categoría ${item.type}; colores ${item.colors.join(', ')}; marca ${item.brand ?? 'sin marca'}.',
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    BlocBuilder<SavedOutfitsBloc, SavedOutfitsState>(
+                      bloc: savedBloc,
+                      builder: (_, state) => state is SavedOutfitsLoaded
+                          ? ListView(
+                              children: [
+                                for (final outfit in state.outfits)
+                                  ListTile(
+                                    leading: SizedBox(
+                                      width: 44,
+                                      height: 52,
+                                      child: AppNetworkImage(
+                                        imageUrl: outfit.tryOnImageUrl,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                    title: Text(
+                                      'Look · ${outfit.occasion ?? 'personal'}',
+                                    ),
+                                    subtitle: Text(
+                                      '${outfit.outfit.itemIds.length} prendas · ${outfit.matchPercentage}%',
+                                    ),
+                                    onTap: () => Navigator.pop(
+                                      sheetContext,
+                                      ChatAttachment(
+                                        title: 'Look guardado',
+                                        imageUrl: outfit.tryOnImageUrl,
+                                        description: () {
+                                          final pieces = wardrobe
+                                              .where(
+                                                (item) => outfit.outfit.itemIds
+                                                    .contains(item.id),
+                                              )
+                                              .map(
+                                                (item) =>
+                                                    '${item.name} (${item.subType}, ${item.colors.join('/')})',
+                                              )
+                                              .join(', ');
+                                          return 'Look guardado para ${outfit.occasion ?? 'uso personal'}; prendas: ${pieces.isEmpty ? outfit.outfit.itemIds.length : pieces}; estilo ${outfit.styleTags.join(', ')}; colores ${outfit.colors.join(', ')}.';
+                                        }(),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            )
+                          : const Center(child: CircularProgressIndicator()),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null && mounted) setState(() => _attachment = selected);
+  }
+}
+
+class _AttachmentPreview extends StatelessWidget {
+  final ChatAttachment attachment;
+  final VoidCallback? onRemove;
+  const _AttachmentPreview({required this.attachment, this.onRemove});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.all(8),
+    decoration: BoxDecoration(
+      color: AppColors.surfaceContainer,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 44,
+          height: 48,
+          child: AppNetworkImage(
+            imageUrl: attachment.imageUrl,
+            fit: BoxFit.contain,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            attachment.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (onRemove != null)
+          IconButton(
+            onPressed: onRemove,
+            icon: const Icon(Icons.close, size: 18),
+          ),
+      ],
+    ),
+  );
+}
+
+class _OutfitGarments extends StatelessWidget {
+  final ChatOutfitPreview preview;
+
+  const _OutfitGarments({required this.preview});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<WardrobeBloc>().state;
+    final items = state.allItems
+        .where((item) => preview.outfit.itemIds.contains(item.id))
+        .toList();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Prendas elegidas (${preview.outfit.itemIds.length})',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          if (items.isEmpty)
+            const Text('No se pudieron resolver las prendas del armario.'),
+          for (final item in items)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: SizedBox(
+                width: 48,
+                height: 56,
+                child: AppNetworkImage(
+                  imageUrl: item.displayImageUrl,
+                  fit: BoxFit.contain,
+                  errorWidget: const Icon(Icons.checkroom_outlined),
+                ),
+              ),
+              title: Text(item.name),
+              subtitle: Text(item.subType),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => WardrobeItemDetailPage(item: item),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -353,11 +626,7 @@ class _AnimatedMessage extends StatelessWidget {
   final Widget child;
   final int index;
 
-  const _AnimatedMessage({
-    super.key,
-    required this.child,
-    required this.index,
-  });
+  const _AnimatedMessage({super.key, required this.child, required this.index});
 
   @override
   Widget build(BuildContext context) {

@@ -17,20 +17,12 @@ IDENTITY CONSISTENCY (mandatory):
 ''';
 
   static const String tryOnReinforcement = '''
-IDENTITY PRESERVATION (highest priority — overrides outfit styling):
-Identity preservation is MORE important than artistic stylization or fashion editorial look.
-
-- Copy the face EXACTLY from the identity reference images. Do NOT invent a new face.
-- Preserve exact skin tone. Do not lighten or darken skin.
-- Preserve ethnicity. Do not alter ethnicity.
-- Preserve facial proportions, bone structure, nose, eyes, lips, jaw.
-- Preserve hairstyle, hair color, hairline, and hair density.
-- Preserve ALL visible accessories from references (glasses, earrings, etc.).
-- Preserve body type, shoulder width, height proportions, and build.
-- The output person must be recognizable as the SAME individual.
-
-Do NOT apply beauty retouching, skin smoothing, face swapping, or ethnic alteration.
-Do NOT generate a generic model face.
+PERSON IDENTITY — use the person photos only as identity and body references:
+- Keep the same recognizable person, natural facial features, skin tone, hair, glasses, and body proportions.
+- Ignore clothing and fashion accessories in the person photos; the selected wardrobe item references define the outfit.
+- Preserve real distinguishing features without copying pixels, freezing the expression, or making the face look retouched or synthetic.
+- Keep personal items visible in the references (such as glasses); these are not permission to add fashion accessories.
+- A natural expression and a reasonable pose change are allowed. Do not change the person's identity, age, body shape, or skin tone.
 ''';
 
   static const String baseImageStyle = '''
@@ -63,9 +55,11 @@ VISUAL STYLE:
 
     final hair = profile.hair;
     if (hair?.color != null || hair?.style != null) {
-      final h = [hair?.color, hair?.style, hair?.density]
-          .whereType<String>()
-          .join(' ');
+      final h = [
+        hair?.color,
+        hair?.style,
+        hair?.density,
+      ].whereType<String>().join(' ');
       lines.add('- $h hair');
     }
 
@@ -103,54 +97,6 @@ $json
 ''';
   }
 
-  static String tryOnImageRoles({
-    required bool hasBaseImage,
-    required bool hasFaceAnchor,
-    required int garmentCount,
-    bool hasFlatlay = false,
-  }) {
-    final lines = <String>['[INPUT_IMAGES — read in order]'];
-    var index = 1;
-
-    if (hasBaseImage) {
-      lines.add(
-        'Image $index: IDENTITY_BASE — full-body person template. '
-        'This IS the person. Keep face, skin, hair, body, pose structure. '
-        'ONLY clothing will change.',
-      );
-      index++;
-    }
-
-    if (hasFaceAnchor) {
-      lines.add(
-        'Image $index: FACE_ANCHOR — high-priority close-up face reference. '
-        'Match eyes, nose, lips, jaw, glasses, and skin tone EXACTLY.',
-      );
-      index++;
-    }
-
-    if (hasFlatlay) {
-      lines.add(
-        'Image $index: CONSOLIDATED_GARMENT_FLATLAY — unified 2-image pipeline. '
-        'Shows all outfit garments and accessories arranged on a clean white background. '
-        'Transfer all items onto the person accurately.',
-      );
-    } else if (garmentCount > 0) {
-      final end = index + garmentCount - 1;
-      if (garmentCount == 1) {
-        lines.add(
-          'Image $index: GARMENT — apply this clothing item to the person.',
-        );
-      } else {
-        lines.add(
-          'Images $index–$end: GARMENTS — apply these clothing items to the person.',
-        );
-      }
-    }
-
-    return lines.join('\n');
-  }
-
   static String buildBlock({IdentityProfile? profile, bool forTryOn = false}) {
     final parts = <String>[seed];
     if (forTryOn) parts.add(tryOnReinforcement);
@@ -170,78 +116,32 @@ $json
   /// Full try-on instruction block (aligned with base-image prompt quality).
   static String buildTryOnPrompt({
     required IdentityProfile? profile,
-    required bool hasBaseImage,
-    required bool hasFaceAnchor,
-    required int garmentCount,
-    bool hasFlatlay = false,
     bool isOnePiece = false,
     List<String> accessoryDescriptions = const [],
   }) {
-    final identityBlock = buildTryOnBlock(profile);
-    final imageRoles = tryOnImageRoles(
-      hasBaseImage: hasBaseImage,
-      hasFaceAnchor: hasFaceAnchor,
-      garmentCount: garmentCount,
-      hasFlatlay: hasFlatlay,
-    );
-    final jsonBlock = profileJsonBlock(profile);
-
-    final onePieceSection = isOnePiece
-        ? '''
-[OUTFIT_TYPE_SPECIFICATION]
-GARMENT_TYPE: FULL_BODY_ONE_PIECE (Dress / Jumpsuit / Romper)
-CRITICAL INSTRUCTION: The subject is wearing a single continuous full-body dress or one-piece garment paired with footwear.
-Do NOT render, paint, or hallucinate pants, trousers, jeans, shorts, skirts, or any separate bottom garments under any circumstances.
-'''
+    final onePieceRule = isOnePiece
+        ? 'The selected outfit includes one one-piece garment. Do not add a separate top, pants, skirt, or other bottom.'
         : '';
-
-    final accessoriesSection = accessoryDescriptions.isNotEmpty
-        ? '''
-[ACCESSORIES_STYLING]
-Include and style all accessories shown in the garment flat-lay:
-${accessoryDescriptions.map((a) => '- $a').join('\n')}
-The subject must wear or carry these accessories naturally (e.g. necklace worn around the neck, earrings on ears, handbag held in hand or over shoulder, scarf draped naturally).
-'''
-        : '';
-
+    final accessories = accessoryDescriptions.isEmpty
+        ? ''
+        : 'Selected accessories, and only these: ${accessoryDescriptions.join(', ')}.';
     return '''
-[OUTPUT_SPECIFICATIONS]
-MODE: IMAGE_GENERATION
-TASK: VIRTUAL_TRY_ON (identity-locked clothing swap — NOT a new person)
-FORMAT: image/jpeg
-ASPECT_RATIO: 3:4
-QUALITY: PREMIUM_ECOMMERCE
+TASK: Create one new, photorealistic try-on photograph. Return a single image.
 
-$imageRoles
+${buildTryOnBlock(profile)}
+${profileJsonBlock(profile)}
 
-$identityBlock
+SELECTED OUTFIT — these item references are authoritative:
+Wear the selected wardrobe items supplied with this request. Preserve each item's actual color, silhouette, cut, material, pattern, and recognizable details. Keep each selected item recognizable; do not recolor, redesign, replace, omit, duplicate, or combine it with another garment.
+Do not invent, substitute, or add clothing, jewelry, bags, hats, belts, or other fashion accessories. Include only the selected items. Personal identity features such as the person's glasses may remain.
+$onePieceRule
+$accessories
 
-$jsonBlock
-$onePieceSection$accessoriesSection
-[INSTRUCTION]
-Perform a virtual try-on on the EXISTING person from the identity reference image(s).
-Replace ONLY their clothing with the garment reference images.
-The face and identity MUST remain the same person — recognizable and faithful to references.
+POSE AND SCENE:
+A natural pose may vary from the person references, but pose changes never authorize outfit changes. Keep garments visible rather than hidden by crossed arms, pockets, props, or cropping. A separate user scene/pose request may guide only the pose and background; it must not change the selected outfit.
 
-[REQUIREMENTS]
-- Identity match is the #1 priority — face must look like the reference person
-- Apply garment colors, textures, and fit from garment images
-- Full-body or 3/4 ecommerce catalog framing, neutral studio background
-- Soft even lighting, natural skin texture, no beauty filters
-- Realistic clothing drape and proportions on the SAME body
-- If wearing a one-piece dress, drape seamlessly across the body down to the hemline with NO separate bottom garments
-- Style any accessories naturally with authentic texture and placement
-
-[AVOID]
-- Generating a different face or generic model
-- Skin lightening, ethnic alteration, face beautification
-- Cinematic/editorial styling, dramatic shadows
-- Ignoring glasses or visible accessories from face reference
-- Hallucinating pants or trousers under a one-piece dress
-- Omitting accessories present in the garment flat-lay
-
-[FINAL_OBJECTIVE]
-One photorealistic image of the SAME individual wearing the complete outfit.
+FRAMING AND OUTPUT:
+Vertical 3:4 full-body fashion photograph, centered person, with head, complete outfit, and shoes inside frame. Use one coherent photographic scene and natural lighting. No text, captions, logos, watermarks, borders, split panels, product cutouts, collages, or moodboards.
 ''';
   }
 }

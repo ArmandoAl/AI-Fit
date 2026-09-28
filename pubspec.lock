@@ -845,6 +845,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  subject_lift_kit:
+    dependency: "direct main"
+    description:
+      name: subject_lift_kit
+      sha256: "3aac1736ac8e82fa917f0ae508c187701e31b2169e647d58b7bfbc24bc1ecab6"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.1"
   supabase:
     dependency: transitive
     description:

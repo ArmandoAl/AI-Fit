@@ -14,7 +14,7 @@ class OutfitGeneratorService {
   final DeepSeekService _gateway;
 
   OutfitGeneratorService({DeepSeekService? gateway})
-      : _gateway = gateway ?? const DeepSeekService();
+    : _gateway = gateway ?? const DeepSeekService();
 
   /// Genera 3 propuestas de outfits balanceando tops, bottoms, shoes y outerwear.
   Future<List<GeneratedOutfit>> generateOutfits({
@@ -45,8 +45,9 @@ class OutfitGeneratorService {
       ...candidateAccessories,
     ];
 
-    final structuredCandidates =
-        allCandidates.map(_mapItemToCandidate).toList();
+    final structuredCandidates = allCandidates
+        .map(_mapItemToCandidate)
+        .toList();
 
     debugPrint(
       '🎨 Composing outfits via DeepSeek with ${allCandidates.length} structured candidates '
@@ -62,7 +63,28 @@ class OutfitGeneratorService {
         idempotencyKey: idempotencyKey,
       );
 
-      final outfits = _parseOutfits(rawOutfits);
+      final parsedOutfits = _parseOutfits(rawOutfits);
+      final requiredColors = intent.requiredColorsByCategory.isNotEmpty;
+      final candidateItemsById = {
+        for (final item in allCandidates) item.id: item,
+      };
+      final outfits = requiredColors
+          ? parsedOutfits
+                .where(
+                  (outfit) =>
+                      WardrobeSearchAlgorithm.outfitSatisfiesRequiredColors(
+                        outfit,
+                        candidateItemsById,
+                        intent,
+                      ),
+                )
+                .toList()
+          : parsedOutfits;
+      if (requiredColors && outfits.isEmpty) {
+        throw StateError(
+          'Composer returned no outfit that satisfies required colors',
+        );
+      }
 
       stopwatch.stop();
 
@@ -75,7 +97,9 @@ class OutfitGeneratorService {
         status: 'success',
       );
 
-      debugPrint('✅ DeepSeek gateway generated ${outfits.length} valid outfits');
+      debugPrint(
+        '✅ DeepSeek gateway generated ${outfits.length} valid outfits',
+      );
       return outfits;
     } catch (e) {
       stopwatch.stop();
@@ -144,7 +168,7 @@ class OutfitGeneratorService {
       }
 
       return GeneratedOutfit(
-        id: map['id']?.toString() ?? 'outfit',
+        id: GeneratedOutfit.ensureUuid(map['id']?.toString()),
         topId: map['topId']?.toString() ?? map['top_id']?.toString(),
         bottomId: map['bottomId']?.toString() ?? map['bottom_id']?.toString(),
         shoesId: map['shoesId']?.toString() ?? map['shoes_id']?.toString(),
@@ -157,8 +181,10 @@ class OutfitGeneratorService {
         compatibilityScore:
             (map['compatibilityScore'] as num?)?.toDouble() ?? 0.88,
         explanation:
-            map['explanation']?.toString() ?? 'Harmonious look curated for you.',
-        explanationEs: map['explanationEs']?.toString() ??
+            map['explanation']?.toString() ??
+            'Harmonious look curated for you.',
+        explanationEs:
+            map['explanationEs']?.toString() ??
             map['explanation_es']?.toString() ??
             'Look armónico y equilibrado seleccionado especialmente para ti.',
         metadata: map['metadata'] as Map<String, dynamic>?,
@@ -166,4 +192,3 @@ class OutfitGeneratorService {
     }).toList();
   }
 }
-

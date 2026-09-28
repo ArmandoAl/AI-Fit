@@ -1,9 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/platform/image_preview.dart';
 import '../../../../core/l10n/app_strings_es.dart';
 import '../../../../core/platform/app_image.dart';
+import '../../../../core/services/native_cutout_service.dart';
 import '../../domain/wardrobe_palette.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
@@ -28,6 +31,7 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
 
   final List<AppImage> _selectedImages = [];
   final List<ItemFormData> _formDataList = [];
+  final List<Uint8List?> _nativeCutouts = [];
 
   bool _isUploading = false;
 
@@ -75,7 +79,9 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
 
       _selectedImages.addAll(widget.initialImages!);
       _formDataList.addAll(widget.initialImages!.map((_) => ItemFormData()));
+      _nativeCutouts.addAll(widget.initialImages!.map((_) => null));
       debugPrint('✅ Initialized with ${_selectedImages.length} images');
+      _extractNativeCutouts(widget.initialImages!);
     } else {
       debugPrint('⚠️ No initial images provided - showing empty state');
     }
@@ -94,6 +100,24 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
       setState(() {
         _selectedImages.addAll(sources);
         _formDataList.addAll(images.map((_) => ItemFormData()));
+        _nativeCutouts.addAll(images.map((_) => null));
+      });
+      _extractNativeCutouts(sources);
+    }
+  }
+
+  /// Recorte on-device (Apple Vision) apenas se selecciona la foto: si el
+  /// dispositivo/plataforma no lo soporta o falla, deja el slot en `null` y
+  /// el flujo de guardado cae al pipeline de Cloud Run sin bloquear al usuario.
+  void _extractNativeCutouts(List<AppImage> images) {
+    final baseIndex = _selectedImages.length - images.length;
+    for (var i = 0; i < images.length; i++) {
+      final index = baseIndex + i;
+      NativeCutoutService.isolateGarment(images[i].bytes).then((cutout) {
+        if (!mounted || cutout == null) return;
+        setState(() {
+          _nativeCutouts[index] = cutout;
+        });
       });
     }
   }
@@ -145,12 +169,14 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
         final image = _selectedImages[i];
         final formData = _formDataList[i];
 
-        // Upload image and save to Firestore
+        // Upload image, save to Supabase immediately (rembg runs in background
+        // unless Apple Vision already produced a cutout on-device)
         await _repository.addWardrobeItemWithData(
           image: image,
           type: formData.type!,
           subType: formData.subType!,
           brand: formData.brand,
+          nativeCutoutBytes: _nativeCutouts[i],
         );
       }
 
@@ -293,11 +319,7 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
             width: double.infinity,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: imageSourcePreview(
-                _selectedImages[0],
-                fit: BoxFit.cover,
-                cacheWidth: 800,
-              ),
+              child: _buildImagePreview(0),
             ),
           ),
           const SizedBox(height: 24),
@@ -327,11 +349,7 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
                   child: SizedBox(
                     height: 200,
                     width: double.infinity,
-                    child: imageSourcePreview(
-                      _selectedImages[index],
-                      fit: BoxFit.cover,
-                      cacheWidth: 600,
-                    ),
+                    child: _buildImagePreview(index),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -341,6 +359,23 @@ class _AddWardrobeItemPageState extends State<AddWardrobeItemPage> {
           ),
         );
       },
+    );
+  }
+
+  /// Prioriza el cutout de Apple Vision (fondo transparente) sobre la foto
+  /// original apenas esté disponible; mismo criterio que usa el catálogo.
+  Widget _buildImagePreview(int index) {
+    final cutout = _nativeCutouts[index];
+    if (cutout != null) {
+      return Container(
+        color: Colors.white,
+        child: Image.memory(cutout, fit: BoxFit.contain),
+      );
+    }
+    return imageSourcePreview(
+      _selectedImages[index],
+      fit: BoxFit.cover,
+      cacheWidth: 600,
     );
   }
 

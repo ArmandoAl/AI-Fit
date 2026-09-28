@@ -153,14 +153,24 @@ class _SmartWardrobeScreenState extends State<SmartWardrobeScreen> {
       };
 
       // Invocación al gateway server-side
-      await _outfitService.generateTryOnForOutfit(
+      final tryOnUrl = await _outfitService.generateTryOnForOutfit(
         outfit: outfit,
         intent: intent,
         wardrobeImageUrlsByItemId: wardrobeMap,
       );
 
+      final resultOutfit = (tryOnUrl != null && tryOnUrl.isNotEmpty)
+          ? outfit.copyWith(
+              metadata: {
+                ...?outfit.metadata,
+                'tryOnImageUrl': tryOnUrl,
+                'imageUrl': tryOnUrl,
+              },
+            )
+          : outfit;
+
       if (!mounted) return;
-      context.push('/outfit-result', extra: outfit);
+      context.push('/outfit-result', extra: resultOutfit);
     } catch (e) {
       if (!mounted) return;
       // Navegación directa con fallback si falla la generación visual

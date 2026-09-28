@@ -1,11 +1,26 @@
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { validateAuth } from '../_shared/auth.ts';
 import { AiRouterRequest, AiRouterResponse, FlatlayItemDto } from '../_shared/types.ts';
-import { getVisualProvider } from '../_shared/image_providers.ts';
+import { DEFAULT_TRY_ON_PROVIDER, FalTryOnProvider, GoogleImageProvider } from '../_shared/image_providers.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 const DEFAULT_MODEL = 'deepseek-chat';
+
+function userMediaPath(stored: string, userId: string, supabaseUrl: string): string {
+  if (stored.startsWith('mock://')) throw new Error('La foto no se pudo subir a Storage');
+  let path = stored;
+  if (stored.startsWith('http')) {
+    const url = new URL(stored);
+    const marker = '/storage/v1/object/sign/user-media/';
+    if (url.origin !== new URL(supabaseUrl).origin || !url.pathname.includes(marker)) {
+      throw new Error('Referencia de imagen fuera de Storage');
+    }
+    path = decodeURIComponent(url.pathname.split(marker)[1]);
+  }
+  if (!path.startsWith(`${userId}/`)) throw new Error('Referencia de imagen ajena al usuario');
+  return path;
+}
 
 // DeepSeek v3 pricing (USD per 1M tokens)
 const COST_PER_1M_PROMPT_TOKENS = 0.14;
@@ -61,8 +76,11 @@ Deno.serve(async (req: Request) => {
       jsonMode,
       temperature,
       identityImageUrl,
+      wardrobeItemIds,
       garmentImageUrls,
       garmentFlatlayUrl,
+      scenePrompt,
+      tryOnProvider,
       items,
       outfitId,
       categoryFilter,
@@ -246,6 +264,7 @@ Your task is to analyze the user's intent and select clothing items exclusively 
 
 STRICT REQUIREMENTS:
 1. Return ONLY a valid JSON object with key "outfits" containing an array of exactly 3 outfit objects.
+1a. Follow intent.requiredColorsByCategory as a hard filter. Candidate colors are wardrobe metadata, not visual verification; never claim visual color certainty beyond those labels.
 2. Outfit composition rule:
    - Each outfit MUST contain either:
      a) A valid "topId" AND "bottomId", OR
@@ -795,16 +814,31 @@ ${JSON.stringify(candidates, null, 2)}`;
       );
     }
 
-    // 9. Action: Generate Virtual Try-On (2 imágenes) or Base Image
+    // 9. Action: Generate a new outfit photograph or legacy base image
     if (action === 'generate_tryon' || action === 'generate_base_image') {
+      if (action === 'generate_base_image') {
+        return new Response(JSON.stringify({ status: 'error', error: 'La imagen base ya no se utiliza' }), {
+          status: 410, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const selectedTryOnProvider = tryOnProvider || DEFAULT_TRY_ON_PROVIDER;
+      if (!['gemini', 'seedream', 'kling'].includes(selectedTryOnProvider)) {
+        return new Response(JSON.stringify({ status: 'error', error: 'Proveedor de try-on no válido' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!Array.isArray(wardrobeItemIds) || wardrobeItemIds.length === 0 ||
+          wardrobeItemIds.some((id) => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id))) {
+        return new Response(JSON.stringify({ status: 'error', error: 'Actualiza la app para enviar las prendas del look' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
       const supabaseServiceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
       console.log(
         `🎬 [ai-router] action=${action} user=${user.id} idempotencyKey=${effectiveIdempotencyKey} ` +
-        `identityImageUrl=${identityImageUrl ? 'present' : 'MISSING'} garmentFlatlayUrl=${garmentFlatlayUrl ? 'present' : 'none'} ` +
-        `itemsCount=${items?.length ?? 0} IMAGE_PROVIDER=${Deno.env.get('IMAGE_PROVIDER') || 'google(default)'} ` +
-        `IMAGE_MODEL=${Deno.env.get('IMAGE_MODEL') || 'imagen-3.0-generate-001(default)'} GEMINI_IMAGE_MODEL=${Deno.env.get('GEMINI_IMAGE_MODEL') || 'n/a'}`
+        `wardrobeItems=${wardrobeItemIds?.length ?? 0} provider=${selectedTryOnProvider}`
       );
 
       // Check Idempotency Cache Hit
@@ -875,9 +909,82 @@ ${JSON.stringify(candidates, null, 2)}`;
       }
 
       let effectiveGarmentFlatlayUrl = garmentFlatlayUrl;
+      let identityReferences: string[] = [];
+      let garmentReferences = garmentImageUrls || [];
+      let garmentDescriptions: string[] = [];
+      let klingGarmentPaths: string[] = [];
+
+      if (action === 'generate_tryon' && wardrobeItemIds?.length) {
+        if (!supabaseUrl || !supabaseServiceRole) {
+          throw new Error('Supabase Storage no está configurado para generar looks');
+        }
+        const itemIds = [...new Set(wardrobeItemIds)];
+        if (itemIds.length > 10) throw new Error('El look excede el límite de 10 prendas y accesorios');
+        const admin = createClient(supabaseUrl, supabaseServiceRole);
+        const [{ data: photos, error: photosError }, { data: garments, error: garmentsError }] = await Promise.all([
+          admin.from('user_photos').select('kind, storage_path, position, created_at').eq('user_id', user.id).order('position').order('created_at'),
+          admin.from('wardrobe_items').select('id, user_id, name, category, subtype, cutout_path, source_path').eq('user_id', user.id).in('id', itemIds),
+        ]);
+        if (photosError || garmentsError) {
+          throw new Error(`No se pudieron cargar las referencias visuales: ${photosError?.message || garmentsError?.message}`);
+        }
+        const byId = new Map((garments || []).map((item) => [item.id, item]));
+        if (itemIds.some((id) => !byId.has(id))) {
+          throw new Error('Algunas prendas del look ya no están en el armario');
+        }
+        const bodyPhotos = (photos || []).filter((photo) => photo.kind === 'body' && !String(photo.storage_path).startsWith('mock://'));
+        const facePhotos = (photos || []).filter((photo) => photo.kind === 'face' && !String(photo.storage_path).startsWith('mock://'));
+        const selectedPhotos = [
+          ...bodyPhotos.slice(0, 2), ...facePhotos.slice(0, 2),
+          ...bodyPhotos.slice(2), ...facePhotos.slice(2),
+        ].slice(0, 4);
+        if (selectedPhotos.length === 0) throw new Error('Sube una foto de rostro o cuerpo en Perfil');
+
+        const sign = async (stored: string): Promise<string> => {
+          const path = userMediaPath(stored, user.id, supabaseUrl);
+          const { data, error } = await admin.storage.from('user-media').createSignedUrl(path, 600);
+          if (error || !data?.signedUrl) throw new Error(`No se pudo abrir una referencia: ${error?.message || path}`);
+          return data.signedUrl;
+        };
+        identityReferences = await Promise.all(selectedPhotos.map((photo) => sign(String(photo.storage_path))));
+        const selectedGarments = itemIds.map((id) => byId.get(id)!);
+        klingGarmentPaths = await Promise.all(selectedGarments.map(async (item) => {
+          if (item.cutout_path) {
+            try {
+              const path = userMediaPath(String(item.cutout_path), user.id, supabaseUrl);
+              await sign(path);
+              return path;
+            } catch (_) { /* use original photo */ }
+          }
+          if (!item.source_path) throw new Error(`La prenda ${item.name || item.id} no tiene foto`);
+          return userMediaPath(String(item.source_path), user.id, supabaseUrl);
+        }));
+        garmentReferences = await Promise.all(klingGarmentPaths.map(sign));
+        if (selectedTryOnProvider === 'kling') {
+          const workerUrl = Deno.env.get('IMAGE_WORKER_URL');
+          const workerToken = Deno.env.get('IMAGE_WORKER_API_KEY');
+          if (!workerUrl || !workerToken) throw new Error('Kling reference worker is not configured');
+          const prepared = await fetch(`${workerUrl}/kling-references`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}` },
+            body: JSON.stringify({ userId: user.id, paths: klingGarmentPaths }),
+          });
+          if (!prepared.ok) throw new Error(`Could not prepare Kling garment references (HTTP ${prepared.status})`);
+          const preparedData = await prepared.json();
+          if (!Array.isArray(preparedData.signedUrls) || preparedData.signedUrls.length !== klingGarmentPaths.length) {
+            throw new Error('Kling reference worker returned an incomplete outfit');
+          }
+          garmentReferences = preparedData.signedUrls;
+        }
+        garmentDescriptions = selectedGarments.map((item) =>
+          `${item.category}: ${item.name || item.subtype || 'prenda'}`
+        );
+        effectiveGarmentFlatlayUrl = undefined;
+        console.log(`📷 [ai-router] Try-on references: ${identityReferences.length} person photos, ${garmentReferences.length} garment photos`);
+      }
 
       // Si no se proporcionó flat-lay pero se recibieron items con cutouts, auto-componer
-      if (!effectiveGarmentFlatlayUrl && action === 'generate_tryon' && items && items.length > 0) {
+      if (!wardrobeItemIds?.length && !effectiveGarmentFlatlayUrl && action === 'generate_tryon' && items && items.length > 0) {
         try {
           const imageWorkerUrl = Deno.env.get('IMAGE_WORKER_URL') || 'http://localhost:8080';
           const workerToken = Deno.env.get('IMAGE_WORKER_API_KEY');
@@ -930,15 +1037,20 @@ ${JSON.stringify(candidates, null, 2)}`;
       }
 
       // Invoke the visual provider adapter (Google Imagen, Gemini, Fal.ai, etc.)
-      const visualProvider = getVisualProvider();
+      const visualProvider = selectedTryOnProvider === 'gemini'
+        ? new GoogleImageProvider()
+        : new FalTryOnProvider(selectedTryOnProvider === 'kling' ? 'kling' : 'seedream');
       let generationResult;
       try {
         generationResult = await visualProvider.generateImage({
           action,
           identityImageUrl: identityImageUrl || '',
-          garmentImageUrls: garmentImageUrls || [],
+          identityImageUrls: identityReferences,
+          garmentImageUrls: garmentReferences,
+          garmentDescriptions,
           garmentFlatlayUrl: effectiveGarmentFlatlayUrl,
           prompt: effectivePrompt,
+          scenePrompt,
           outfitId,
           idempotencyKey: effectiveIdempotencyKey,
         });
@@ -985,9 +1097,11 @@ ${JSON.stringify(candidates, null, 2)}`;
 
       // Destination storage path in private bucket "generated"
       const timestamp = Date.now();
+      const extension = generationResult.contentType.includes('png') ? 'png' :
+        generationResult.contentType.includes('webp') ? 'webp' : 'jpg';
       const storagePath = action === 'generate_tryon'
-        ? `${user.id}/tryons/${outfitId || 'look'}_${timestamp}.jpg`
-        : `${user.id}/identity/base_${timestamp}.jpg`;
+        ? `${user.id}/tryons/${outfitId || 'look'}_${timestamp}.${extension}`
+        : `${user.id}/identity/base_${timestamp}.${extension}`;
 
       let finalImageUrl = storagePath;
 

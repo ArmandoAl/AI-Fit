@@ -18,7 +18,8 @@ import '../../core/services/onboarding_gate_service.dart';
 import '../../features/auth/presentation/bloc/auth_bloc.dart';
 import '../../features/auth/presentation/bloc/auth_state.dart';
 import '../../features/auth/presentation/pages/splash_page.dart';
-import '../../features/stylist/domain/chat_models.dart';
+import '../../features/stylist/domain/chat_models.dart' as chat_models;
+import '../../features/outfit/domain/outfit_models.dart' as outfit_models;
 
 // Definimos una clave global para el navegador
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -177,9 +178,27 @@ GoRouter createRouter(BuildContext context) {
         path: '/outfit-result',
         parentNavigatorKey: _rootNavigatorKey, // Para cubrir la bottom bar
         builder: (context, state) {
-          // Extraemos el objeto pasado como argumento
-          final outfit = state.extra as GeneratedOutfit;
-          return OutfitResultPage(outfit: outfit);
+          final extra = state.extra;
+          if (extra is chat_models.GeneratedOutfit) {
+            return OutfitResultPage(outfit: extra);
+          } else if (extra is outfit_models.GeneratedOutfit) {
+            final imageUrl = extra.metadata?['tryOnImageUrl']?.toString() ??
+                extra.metadata?['imageUrl']?.toString() ??
+                '';
+            return OutfitResultPage(
+              outfit: chat_models.GeneratedOutfit(
+                id: extra.id,
+                imageUrl: imageUrl,
+                matchPercentage: extra.matchPercentage,
+                itemIds: extra.itemIds,
+              ),
+            );
+          } else if (extra is Map<String, dynamic>) {
+            return OutfitResultPage(
+              outfit: chat_models.GeneratedOutfit.fromJson(extra),
+            );
+          }
+          throw ArgumentError('Formato de outfit no soportado en /outfit-result: $extra');
         },
       ),
     ],

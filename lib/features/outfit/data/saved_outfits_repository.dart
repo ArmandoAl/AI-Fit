@@ -29,8 +29,8 @@ class SavedOutfitsRepository {
     return const Uuid().v4();
   }
 
-  /// Guarda un outfit relacionalmente en Supabase Postgres
-  Future<void> saveOutfit(SavedOutfit savedOutfit) async {
+  /// Guarda un outfit relacionalmente en Supabase Postgres y retorna el UUID persistido.
+  Future<String> saveOutfit(SavedOutfit savedOutfit) async {
     final userId = _getCurrentUserId();
     if (userId == null) throw Exception('No user logged in');
 
@@ -104,20 +104,24 @@ class SavedOutfitsRepository {
       }
 
       debugPrint('✅ [SavedOutfitsRepository -> Supabase] Outfit $outfitId saved');
+      return outfitId;
     } catch (e) {
       debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error saving outfit: $e');
       throw Exception('Failed to save outfit: $e');
     }
   }
 
-  Future<void> saveOutfits(List<SavedOutfit> outfits) async {
+  Future<List<String>> saveOutfits(List<SavedOutfit> outfits) async {
+    final savedIds = <String>[];
     for (final outfit in outfits) {
       try {
-        await saveOutfit(outfit);
+        final id = await saveOutfit(outfit);
+        savedIds.add(id);
       } catch (e) {
         debugPrint('⚠️ Failed to save outfit ${outfit.id}: $e');
       }
     }
+    return savedIds;
   }
 
   Future<List<SavedOutfit>> getSavedOutfits({
@@ -376,11 +380,20 @@ class SavedOutfitsRepository {
 
   Future<void> updateTryOnImageUrl(String outfitId, String tryOnImageUrl) async {
     try {
+      final uuidRegex = RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+      );
+      if (!uuidRegex.hasMatch(outfitId.trim())) {
+        debugPrint(
+          '⚠️ [SavedOutfitsRepository] updateTryOnImageUrl skipped: "$outfitId" is not a valid UUID (prevents 22P02)',
+        );
+        return;
+      }
       await _supabase
           .from('outfits')
           .update({'try_on_path': tryOnImageUrl})
-          .eq('id', outfitId);
-      debugPrint('✅ [SavedOutfitsRepository -> Supabase] Try-on URL updated');
+          .eq('id', outfitId.trim());
+      debugPrint('✅ [SavedOutfitsRepository -> Supabase] Try-on URL updated for $outfitId');
     } catch (e) {
       debugPrint('❌ [SavedOutfitsRepository -> Supabase] Error updating try-on URL: $e');
     }

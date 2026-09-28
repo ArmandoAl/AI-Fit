@@ -50,7 +50,8 @@ class WardrobeItem {
 
   final String id;
   final String name;
-  final String type; // 'top', 'bottom', 'one_piece', 'shoes', 'outerwear', 'accessories'
+  final String
+  type; // 'top', 'bottom', 'one_piece', 'shoes', 'outerwear', 'accessories'
   final String subType; // e.g., 'jeans', 't-shirt', 'sweater', 'dress', 'scarf'
   final String imageUrl;
   final String?
@@ -61,6 +62,7 @@ class WardrobeItem {
   final List<String> season; // e.g., ['spring', 'summer']
   final DateTime? createdAt;
   final WardrobeAiMetadata? aiMetadata;
+
   /// 'processing' | 'ready' | 'failed'. Heurística: visibilidad del estado
   /// del sistema — permite mostrar en la UI que una prenda aún no tiene
   /// cutout/embedding, o que su procesamiento falló.
@@ -68,6 +70,7 @@ class WardrobeItem {
 
   bool get isProcessing => processingStatus == 'processing';
   bool get processingFailed => processingStatus == 'failed';
+  String? get sourcePath => imageUrl;
 
   WardrobeItem({
     required this.id,

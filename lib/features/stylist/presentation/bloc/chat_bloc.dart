@@ -13,11 +13,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final StylistRepository repository;
   final OutfitService _outfitService;
 
-  ChatBloc({
-    required this.repository,
-    OutfitService? outfitService,
-  })  : _outfitService = outfitService ?? OutfitService(),
-        super(const ChatInitial()) {
+  ChatBloc({required this.repository, OutfitService? outfitService})
+    : _outfitService = outfitService ?? OutfitService(),
+      super(const ChatInitial()) {
     on<ChatSessionStarted>(_onSessionStarted);
     on<ChatMessageSent>(_onMessageSent);
     on<ChatGenerateOutfitRequested>(_onGenerateOutfit);
@@ -39,12 +37,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     ChatMessageSent event,
     Emitter<ChatState> emit,
   ) async {
-    if (event.text.trim().isEmpty) return;
+    if (event.text.trim().isEmpty && event.attachment == null) return;
 
     final current = state;
     if (current is! ChatLoaded) return;
 
-    final userMsg = ChatMessage.userText(event.text.trim());
+    final userMsg = ChatMessage.userText(
+      event.text.trim(),
+      attachment: event.attachment,
+    );
     var messages = [...current.messages, userMsg];
     messages = _withoutStaleCta(messages);
 
@@ -58,7 +59,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     try {
       final turn = await repository.sendMessage(
-        userMessage: event.text.trim(),
+        userMessage: [
+          event.text.trim(),
+          if (event.attachment != null)
+            'Contexto adjunto: ${event.attachment!.description}',
+        ].where((part) => part.isNotEmpty).join('\n'),
         history: messages,
         currentIntent: current.accumulatedIntent,
       );
@@ -151,9 +156,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       for (var i = 0; i < result.outfits.length; i++) {
         final outfit = result.outfits[i];
-        TryOnStatus status = TryOnStatus.none;
+        TryOnStatus status = TryOnStatus.readyForTryOn;
         if (event.generateTryOn) {
-          status = i == 0 ? TryOnStatus.generating : TryOnStatus.readyForTryOn;
+          status = TryOnStatus.generating;
         }
         resultMessages = [
           ...resultMessages,
@@ -162,6 +167,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               outfit: outfit,
               explanation: outfit.displayExplanation,
               tryOnStatus: status,
+              tryOnProvider: pipeline.tryOnProviderForPosition(i),
             ),
           ),
         ];
@@ -176,13 +182,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         ),
       );
 
-      if (event.generateTryOn && result.outfits.isNotEmpty) {
-        await _generateTryOnAndUpdateMessage(
-          outfitId: result.outfits.first.id,
-          intent: result.intent,
-          wardrobeImageUrlsByItemId: result.wardrobeImageUrlsByItemId,
-          emit: emit,
-        );
+      if (event.generateTryOn) {
+        for (final outfit in result.outfits) {
+          await _generateTryOnAndUpdateMessage(
+            outfitId: outfit.id,
+            intent: result.intent,
+            wardrobeImageUrlsByItemId: result.wardrobeImageUrlsByItemId,
+            emit: emit,
+          );
+        }
       }
     } catch (e) {
       debugPrint('❌ Outfit generation from chat: $e');
@@ -214,9 +222,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final outfit = _findOutfitInMessages(current.messages, event.outfitId);
       if (outfit == null) return;
 
+      final provider = current.messages
+          .firstWhere((m) => m.outfitPreview?.outfit.id == event.outfitId)
+          .outfitPreview!
+          .tryOnProvider;
+
       final url = await _outfitService.generateTryOnForOutfit(
         outfit: outfit,
         intent: current.lastOutfitIntent!,
+        tryOnProvider: provider,
         wardrobeImageUrlsByItemId: current.lastWardrobeImageUrls,
       );
 
@@ -228,7 +242,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       );
     } catch (e) {
       debugPrint('❌ Chat try-on error: $e');
-      _setOutfitTryOnStatus(emit, event.outfitId, TryOnStatus.readyForTryOn);
+      _setOutfitTryOnStatus(emit, event.outfitId, TryOnStatus.failed);
     }
   }
 
@@ -244,10 +258,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final outfit = _findOutfitInMessages(current.messages, outfitId);
     if (outfit == null) return;
 
+    final provider = current.messages
+        .firstWhere((m) => m.outfitPreview?.outfit.id == outfitId)
+        .outfitPreview!
+        .tryOnProvider;
+
     try {
       final url = await _outfitService.generateTryOnForOutfit(
         outfit: outfit,
         intent: intent,
+        tryOnProvider: provider,
         wardrobeImageUrlsByItemId: wardrobeImageUrlsByItemId,
       );
 
@@ -259,7 +279,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       );
     } catch (e) {
       debugPrint('❌ First try-on from chat: $e');
-      _setOutfitTryOnStatus(emit, outfitId, TryOnStatus.readyForTryOn);
+      _setOutfitTryOnStatus(emit, outfitId, TryOnStatus.failed);
     }
   }
 
@@ -305,11 +325,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final current = state;
     if (current is! ChatLoaded) return;
     final without = _withoutLoading(current.messages);
-    emit(
-      current.copyWith(
-        messages: [...without, ChatMessage.loading(phase)],
-      ),
-    );
+    emit(current.copyWith(messages: [...without, ChatMessage.loading(phase)]));
   }
 
   List<ChatMessage> _withoutStaleCta(List<ChatMessage> messages) {

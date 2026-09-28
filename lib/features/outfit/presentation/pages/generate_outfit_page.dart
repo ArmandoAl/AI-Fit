@@ -1,3 +1,7 @@
+import '../../../wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import '../../../wardrobe/presentation/bloc/wardrobe_event.dart';
+import '../../../wardrobe/presentation/bloc/wardrobe_state.dart';
+import '../../../wardrobe/presentation/pages/wardrobe_item_detail_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -25,9 +29,15 @@ class GenerateOutfitPage extends StatefulWidget {
 
 class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
   final TextEditingController _promptController = TextEditingController();
-  // Heurística: visibilidad del estado del sistema — activado por default para
-  // que el usuario vea su try-on sin tener que descubrir este switch primero.
-  bool _generateImage = true;
+
+  @override
+  void initState() {
+    super.initState();
+    final wardrobeBloc = context.read<WardrobeBloc>();
+    if (wardrobeBloc.state is WardrobeInitial) {
+      wardrobeBloc.add(const WardrobeLoadRequested());
+    }
+  }
 
   @override
   void dispose() {
@@ -49,10 +59,7 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
     }
 
     context.read<OutfitGenerationBloc>().add(
-      GenerateOutfitsRequested(
-        userPrompt: prompt,
-        generateImage: _generateImage,
-      ),
+      GenerateOutfitsRequested(userPrompt: prompt, generateImage: false),
     );
   }
 
@@ -104,7 +111,7 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
                     kicker: 'Composición',
                     title: AppStringsEs.describeOutfitWant,
                     subtitle:
-                        'Ejemplo: “cena de verano, lino y paleta tierra” o “look formal para una boda”.',
+                        'Ejemplo: “look de invierno en una banqueta, manos visibles para mostrar los anillos”.',
                   ),
                   const SizedBox(height: 24),
 
@@ -113,7 +120,7 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
                     controller: _promptController,
                     decoration: InputDecoration(
                       labelText: AppStringsEs.outfitDescription,
-                      hintText: 'ej. look casual de fin de semana',
+                      hintText: 'Look, ocasión y escena o pose que imaginas',
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.auto_awesome),
                       suffixIcon: _promptController.text.isNotEmpty
@@ -132,37 +139,6 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Generate Image Toggle — prominente y activado por default
-                  // (heurística: visibilidad del estado del sistema).
-                  Card(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(
-                        color: _generateImage
-                            ? AppColors.primary.withValues(alpha: 0.5)
-                            : Colors.transparent,
-                      ),
-                    ),
-                    child: SwitchListTile(
-                      secondary: Icon(
-                        Icons.auto_awesome,
-                        color: _generateImage
-                            ? AppColors.primary
-                            : AppColors.secondary,
-                      ),
-                      title: const Text(AppStringsEs.generatePreviewImage),
-                      subtitle: const Text(AppStringsEs.generatePreviewSubtitle),
-                      value: _generateImage,
-                      onChanged: state is OutfitGenerationLoading
-                          ? null
-                          : (value) {
-                              setState(() {
-                                _generateImage = value;
-                              });
-                            },
-                      activeThumbColor: AppColors.primary,
-                    ),
-                  ),
                   const SizedBox(height: 24),
 
                   // Generate Button
@@ -256,12 +232,7 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
         ...state.outfits.asMap().entries.map((entry) {
           final index = entry.key;
           final outfit = entry.value;
-          return _buildOutfitCard(
-            context,
-            state,
-            outfit,
-            index + 1,
-          );
+          return _buildOutfitCard(context, state, outfit, index + 1);
         }),
       ],
     );
@@ -276,6 +247,7 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
     final tryOnImageUrl = state.getImageUrlForOutfit(outfit.id);
     final status = state.statusFor(outfit.id);
     final error = state.tryOnErrors[outfit.id];
+    final wardrobeState = context.watch<WardrobeBloc>().state;
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
@@ -296,12 +268,28 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
                     color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(
-                    'Outfit $index',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Outfit $index',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      Text(
+                        switch (tryOnProviderForPosition(index - 1)) {
+                          'seedream' => 'Seedream 5.0',
+                          'kling' => 'Kling O3',
+                          _ => 'Gemini 3.1',
+                        },
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const Spacer(),
@@ -353,24 +341,100 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
             ),
             const SizedBox(height: 16),
 
-            // Items
             if (outfit.itemIds.isNotEmpty) ...[
               const Text(
-                'Prendas:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                'Prendas del atuendo:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: outfit.itemIds.map((itemId) {
-                  return Chip(
-                    label: Text(
-                      itemId.substring(0, 8),
-                      style: const TextStyle(fontSize: 10),
-                    ),
-                    backgroundColor: Colors.grey[200],
-                  );
-                }).toList(),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 90,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: outfit.itemIds.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final id = outfit.itemIds[index];
+                    final item = wardrobeState.items
+                        .where((i) => i.id == id)
+                        .firstOrNull;
+
+                    final imageUrl = item?.displayImageUrl ?? '';
+                    final name = item != null
+                        ? (item.name.isNotEmpty
+                              ? item.name
+                              : (item.subType.isNotEmpty
+                                    ? item.subType
+                                    : item.type))
+                        : (id.length >= 6 ? id.substring(0, 6) : id);
+
+                    return InkWell(
+                      onTap: item == null
+                          ? null
+                          : () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    WardrobeItemDetailPage(item: item),
+                              ),
+                            ),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 75,
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: AppColors.surfaceContainerHighest,
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.all(4.0),
+                                child: imageUrl.isNotEmpty
+                                    ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(6),
+                                        child: AppNetworkImage(
+                                          imageUrl: imageUrl,
+                                          fit: BoxFit.contain,
+                                          errorWidget: const Icon(
+                                            Icons.checkroom,
+                                            size: 28,
+                                            color: AppColors.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.checkroom,
+                                        size: 28,
+                                        color: AppColors.onSurfaceVariant,
+                                      ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4.0,
+                                vertical: 2.0,
+                              ),
+                              child: Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.onSurface,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
               const SizedBox(height: 16),
             ],
@@ -401,10 +465,8 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
                     onPressed: _canRequestTryOn(status)
                         ? () {
                             context.read<OutfitGenerationBloc>().add(
-                                  GenerateTryOnImageRequested(
-                                    outfitId: outfit.id,
-                                  ),
-                                );
+                              GenerateTryOnImageRequested(outfitId: outfit.id),
+                            );
                           }
                         : null,
                     icon: Icon(_tryOnButtonIcon(status)),
@@ -472,9 +534,7 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
           errorWidget: Container(
             height: 300,
             color: Colors.grey[200],
-            child: const Center(
-              child: Icon(Icons.error_outline, size: 48),
-            ),
+            child: const Center(child: Icon(Icons.error_outline, size: 48)),
           ),
         ),
       );
@@ -489,9 +549,7 @@ class _GenerateOutfitPageState extends State<GenerateOutfitPage> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
         ),
-        child: const Center(
-          child: ColdStartProgressIndicator(),
-        ),
+        child: const Center(child: ColdStartProgressIndicator()),
       );
     }
 

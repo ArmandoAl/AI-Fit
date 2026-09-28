@@ -6,8 +6,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 const String supabaseUrl =
     String.fromEnvironment('SUPABASE_URL', defaultValue: '');
 
-const String supabaseAnonKey =
-    String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
+const String supabaseApiKey = String.fromEnvironment(
+  'SUPABASE_PUBLISHABLE_KEY',
+  defaultValue: String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: ''),
+);
 
 /// Service responsible for managing Supabase client lifecycle.
 ///
@@ -18,9 +20,9 @@ class AppSupabaseClient {
 
   static bool _isInitialized = false;
 
-  /// Returns true if both SUPABASE_URL and SUPABASE_ANON_KEY are present in the environment.
+  /// Returns true if both SUPABASE_URL and a public Supabase API key are present.
   static bool get isConfigured =>
-      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+      supabaseUrl.isNotEmpty && supabaseApiKey.isNotEmpty;
 
   /// Returns true if Supabase SDK was successfully initialized.
   static bool get isInitialized => _isInitialized;
@@ -39,7 +41,7 @@ class AppSupabaseClient {
   static Future<void> initialize() async {
     if (!isConfigured) {
       debugPrint(
-        '⚠️ [AppSupabaseClient] SUPABASE_URL and/or SUPABASE_ANON_KEY not provided via --dart-define. '
+        '⚠️ [AppSupabaseClient] SUPABASE_URL and/or SUPABASE_PUBLISHABLE_KEY not provided via --dart-define. '
         'Supabase client running uninitialized.',
       );
       return;
@@ -49,7 +51,7 @@ class AppSupabaseClient {
       await Supabase.initialize(
         url: supabaseUrl,
         // ignore: deprecated_member_use
-        anonKey: supabaseAnonKey,
+        anonKey: supabaseApiKey,
       );
       _isInitialized = true;
       debugPrint('✅ [AppSupabaseClient] Supabase initialized successfully.');

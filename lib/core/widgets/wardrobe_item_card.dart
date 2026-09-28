@@ -8,11 +8,21 @@ import '../../features/wardrobe/presentation/pages/wardrobe_item_detail_page.dar
 
 class WardrobeItemCard extends StatelessWidget {
   final WardrobeItem item;
-  /// Heurística: ayuda a reconocer y resolver errores. Se llama al tocar el
-  /// badge de error cuando processingStatus == 'failed'.
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final VoidCallback? onRetryProcessing;
 
-  const WardrobeItemCard({super.key, required this.item, this.onRetryProcessing});
+  const WardrobeItemCard({
+    super.key,
+    required this.item,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onTap,
+    this.onLongPress,
+    this.onRetryProcessing,
+  });
 
   String get _categoryLabel {
     if (item.type.isEmpty) return '';
@@ -25,27 +35,50 @@ class WardrobeItemCard extends StatelessWidget {
     return null;
   }
 
+  String get _imageUrl {
+    final cutout = item.cutoutPath?.trim();
+    if (cutout != null && cutout.isNotEmpty) {
+      return cutout;
+    }
+    final img = item.imageUrl.trim();
+    if (img.isNotEmpty) {
+      return img;
+    }
+    return item.sourcePath ?? '';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hasCutout =
+        item.cutoutPath != null && item.cutoutPath!.trim().isNotEmpty;
+    final isProcessing =
+        item.processingStatus == 'processing' ||
+        item.processingStatus == 'pending';
 
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         boxShadow: AppTheme.ambientCardShadow,
+        border: (isSelectionMode && isSelected)
+            ? Border.all(color: AppColors.primary, width: 2)
+            : null,
       ),
       child: Card(
         clipBehavior: Clip.antiAlias,
         margin: EdgeInsets.zero,
         elevation: 0,
         child: InkWell(
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => WardrobeItemDetailPage(item: item),
-              ),
-            );
-          },
+          onTap:
+              onTap ??
+              () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => WardrobeItemDetailPage(item: item),
+                  ),
+                );
+              },
+          onLongPress: onLongPress,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -54,14 +87,12 @@ class WardrobeItemCard extends StatelessWidget {
                   fit: StackFit.expand,
                   children: [
                     Container(
-                      color: (item.cutoutPath != null && item.cutoutPath!.isNotEmpty)
+                      color: hasCutout
                           ? Colors.white
                           : AppColors.surfaceContainer,
                       child: AppNetworkImage(
-                        imageUrl: item.displayImageUrl,
-                        fit: (item.cutoutPath != null && item.cutoutPath!.isNotEmpty)
-                            ? BoxFit.contain
-                            : BoxFit.cover,
+                        imageUrl: _imageUrl,
+                        fit: hasCutout ? BoxFit.contain : BoxFit.cover,
                         width: double.infinity,
                         placeholder: Container(
                           color: Colors.white,
@@ -103,7 +134,35 @@ class WardrobeItemCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (item.cutoutPath != null && item.cutoutPath!.isNotEmpty)
+                    if (isSelectionMode)
+                      Positioned(
+                        top: 10,
+                        right: 10,
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isSelected
+                                ? AppColors.primary
+                                : Colors.black.withValues(alpha: 0.55),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : Colors.white,
+                              width: 2,
+                            ),
+                          ),
+                          child: isSelected
+                              ? const Icon(
+                                  Icons.check,
+                                  size: 15,
+                                  color: Colors.white,
+                                )
+                              : null,
+                        ),
+                      )
+                    else if (hasCutout)
                       Positioned(
                         top: 10,
                         right: 10,
@@ -125,25 +184,71 @@ class WardrobeItemCard extends StatelessWidget {
                             color: AppColors.gold,
                           ),
                         ),
-                      )
-                    else if (item.isProcessing)
-                      const Positioned(
-                        top: 10,
-                        right: 10,
-                        child: _StatusBadge(
-                          icon: null,
-                          color: AppColors.secondary,
-                          isSpinner: true,
+                      ),
+                    if (isProcessing)
+                      Positioned(
+                        bottom: 8,
+                        left: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.82),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.gold.withValues(alpha: 0.6),
+                              width: 1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    AppColors.gold,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'Procesando recorte...',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.3,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       )
-                    else if (item.processingFailed)
+                    else if (item.processingFailed && !isSelectionMode)
                       Positioned(
                         top: 10,
                         right: 10,
-                        child: GestureDetector(
-                          onTap: onRetryProcessing,
-                          child: const _StatusBadge(
-                            icon: Icons.error_outline,
+                        child: IconButton(
+                          tooltip: 'Reintentar procesamiento',
+                          onPressed: onRetryProcessing,
+                          icon: const Icon(
+                            Icons.error_outline,
                             color: AppColors.error,
                           ),
                         ),
@@ -184,42 +289,6 @@ class WardrobeItemCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Badge circular para estado de procesamiento (spinner) o error (tocable, con
-/// tooltip explicando que se puede reintentar).
-class _StatusBadge extends StatelessWidget {
-  final IconData? icon;
-  final Color color;
-  final bool isSpinner;
-
-  const _StatusBadge({required this.icon, required this.color, this.isSpinner = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: isSpinner
-          ? 'Procesando prenda…'
-          : 'No se pudo procesar esta prenda. Toca para reintentar.',
-      child: Container(
-        padding: const EdgeInsets.all(5),
-        decoration: BoxDecoration(
-          color: AppColors.surface.withValues(alpha: 0.92),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4),
-          ],
-        ),
-        child: isSpinner
-            ? const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.secondary),
-              )
-            : Icon(icon, size: 14, color: color),
       ),
     );
   }

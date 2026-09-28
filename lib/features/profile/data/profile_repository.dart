@@ -74,23 +74,33 @@ class ProfileRepository {
           .maybeSingle();
 
       if (existing == null) {
-        debugPrint('⚠️ [ProfileRepository] Perfil no encontrado para $userId. Realizando upsert defensivo...');
+        debugPrint(
+          '⚠️ [ProfileRepository] Perfil no encontrado para $userId. Realizando upsert defensivo...',
+        );
         await _supabase.from('profiles').upsert({
           'id': userId,
           'updated_at': DateTime.now().toUtc().toIso8601String(),
         }, onConflict: 'id');
-        debugPrint('✅ [ProfileRepository] Perfil defensivo confirmado para $userId');
+        debugPrint(
+          '✅ [ProfileRepository] Perfil defensivo confirmado para $userId',
+        );
       }
     } catch (e) {
-      debugPrint('⚠️ [ProfileRepository] Error verificando perfil ($e), forzando upsert defensivo...');
+      debugPrint(
+        '⚠️ [ProfileRepository] Error verificando perfil ($e), forzando upsert defensivo...',
+      );
       try {
         await _supabase.from('profiles').upsert({
           'id': userId,
           'updated_at': DateTime.now().toUtc().toIso8601String(),
         }, onConflict: 'id');
-        debugPrint('✅ [ProfileRepository] Perfil forzado exitosamente para $userId');
+        debugPrint(
+          '✅ [ProfileRepository] Perfil forzado exitosamente para $userId',
+        );
       } catch (upsertError) {
-        debugPrint('❌ [ProfileRepository] Fallo crítico al asegurar registro en profiles: $upsertError');
+        debugPrint(
+          '❌ [ProfileRepository] Fallo crítico al asegurar registro en profiles: $upsertError',
+        );
         rethrow;
       }
     }
@@ -107,20 +117,12 @@ class ProfileRepository {
       // Salvaguarda FK: garantizar registro en public.profiles antes de subir fotos o insertar en user_photos
       await ensureProfileExists(userId);
 
-      List<String> urls = [];
-      try {
-        urls = await _storageService.uploadMultiplePhotos(
-          userId: userId,
-          images: photos,
-          photoType: 'body',
-        );
-        debugPrint('✅ Photos uploaded to Storage');
-      } catch (e) {
-        debugPrint('⚠️ Storage upload failed (using mock URLs): $e');
-        urls = photos
-            .map((f) => 'mock://body_photo_${f.storageKey}')
-            .toList();
-      }
+      final urls = await _storageService.uploadMultiplePhotos(
+        userId: userId,
+        images: photos,
+        photoType: 'body',
+      );
+      debugPrint('✅ Photos uploaded to Storage');
 
       for (final url in urls) {
         await _supabase.from('user_photos').upsert({
@@ -151,20 +153,12 @@ class ProfileRepository {
       // Salvaguarda FK: garantizar registro en public.profiles antes de subir fotos o insertar en user_photos
       await ensureProfileExists(userId);
 
-      List<String> urls = [];
-      try {
-        urls = await _storageService.uploadMultiplePhotos(
-          userId: userId,
-          images: photos,
-          photoType: 'face',
-        );
-        debugPrint('✅ Photos uploaded to Storage');
-      } catch (e) {
-        debugPrint('⚠️ Storage upload failed (using mock URLs): $e');
-        urls = photos
-            .map((f) => 'mock://face_photo_${f.storageKey}')
-            .toList();
-      }
+      final urls = await _storageService.uploadMultiplePhotos(
+        userId: userId,
+        images: photos,
+        photoType: 'face',
+      );
+      debugPrint('✅ Photos uploaded to Storage');
 
       for (final url in urls) {
         await _supabase.from('user_photos').upsert({
@@ -190,12 +184,14 @@ class ProfileRepository {
       try {
         final profile = await getUserProfile(userId);
         if (profile == null) return;
-        final body = (profile['bodyPhotos'] as List<dynamic>?)
+        final body =
+            (profile['bodyPhotos'] as List<dynamic>?)
                 ?.map((e) => e.toString())
                 .where((u) => u.isNotEmpty && !u.startsWith('mock://'))
                 .toList() ??
             [];
-        final face = (profile['facePhotos'] as List<dynamic>?)
+        final face =
+            (profile['facePhotos'] as List<dynamic>?)
                 ?.map((e) => e.toString())
                 .where((u) => u.isNotEmpty && !u.startsWith('mock://'))
                 .toList() ??
@@ -261,7 +257,8 @@ class ProfileRepository {
     try {
       await _supabase
           .from('profiles')
-          .update({'onboarding_completed': true}).eq('id', userId);
+          .update({'onboarding_completed': true})
+          .eq('id', userId);
       debugPrint('✅ [ProfileRepository -> Supabase] Onboarding completed');
     } catch (e) {
       debugPrint('⚠️ Onboarding completion skipped: $e');
@@ -276,7 +273,8 @@ class ProfileRepository {
     try {
       await _supabase
           .from('profiles')
-          .update({'preferences': preferences}).eq('id', userId);
+          .update({'preferences': preferences})
+          .eq('id', userId);
       debugPrint('✅ [ProfileRepository -> Supabase] Preferences updated');
     } catch (e) {
       debugPrint('Error updating preferences: $e');
@@ -312,7 +310,9 @@ class ProfileRepository {
       await _supabase.from('user_photos').delete().eq('user_id', userId);
       await _supabase.from('profiles').delete().eq('id', userId);
 
-      debugPrint('✅ [ProfileRepository -> Supabase] User account and data deleted');
+      debugPrint(
+        '✅ [ProfileRepository -> Supabase] User account and data deleted',
+      );
     } catch (e) {
       debugPrint('❌ Error deleting user account: $e');
       throw Exception('Failed to delete user account: $e');

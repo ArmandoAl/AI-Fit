@@ -64,7 +64,9 @@ class StorageService {
     if (AppSupabaseClient.isInitialized && AppSupabaseClient.client != null) {
       final supabaseUser = _supabase.auth.currentUser;
       if (supabaseUser != null && supabaseUser.id != userId) {
-        debugPrint('ℹ️ [StorageService] Supabase session user: ${supabaseUser.id}');
+        debugPrint(
+          'ℹ️ [StorageService] Supabase session user: ${supabaseUser.id}',
+        );
       }
     }
   }
@@ -78,22 +80,22 @@ class StorageService {
     if (bucket == 'generated') {
       _assertValidGeneratedBytes(bytes, 'generated asset ($path)');
     }
-    debugPrint('📤 [StorageService -> Supabase] Uploading to $bucket/$path ($mimeType)');
+    debugPrint(
+      '📤 [StorageService -> Supabase] Uploading to $bucket/$path ($mimeType)',
+    );
 
-    await _supabase.storage.from(bucket).uploadBinary(
+    await _supabase.storage
+        .from(bucket)
+        .uploadBinary(
           path,
           bytes,
-          fileOptions: FileOptions(
-            contentType: mimeType,
-            upsert: true,
-          ),
+          fileOptions: FileOptions(contentType: mimeType, upsert: true),
         );
 
     // Generar URL firmada con 7 días de validez (604800 segundos) para buckets privados
-    final signedUrl = await _supabase.storage.from(bucket).createSignedUrl(
-          path,
-          604800,
-        );
+    final signedUrl = await _supabase.storage
+        .from(bucket)
+        .createSignedUrl(path, 604800);
 
     debugPrint('✅ [StorageService -> Supabase] Upload complete: $signedUrl');
     return signedUrl;
@@ -116,7 +118,9 @@ class StorageService {
       }
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final normalizedBytes = await ImageCompressionUtil.compressIdentity(image);
+      final normalizedBytes = await ImageCompressionUtil.compressIdentity(
+        image,
+      );
       final mime = detectMimeType(normalizedBytes);
       final ext = extensionForMime(mime);
 
@@ -141,16 +145,12 @@ class StorageService {
     final urls = <String>[];
 
     for (final image in images) {
-      try {
-        final url = await uploadUserPhoto(
-          userId: userId,
-          image: image,
-          photoType: photoType,
-        );
-        urls.add(url);
-      } catch (e) {
-        debugPrint('Error uploading image: $e');
-      }
+      final url = await uploadUserPhoto(
+        userId: userId,
+        image: image,
+        photoType: photoType,
+      );
+      urls.add(url);
     }
 
     return urls;
@@ -183,6 +183,27 @@ class StorageService {
       debugPrint('❌ Error uploading wardrobe item: $e');
       throw Exception('Failed to upload wardrobe item: $e');
     }
+  }
+
+  /// Sube un cutout PNG con transparencia generada on-device (Apple Vision)
+  /// sin pasar por el pipeline de compresión JPEG (destruiría el canal alfa).
+  Future<String> uploadWardrobeCutout({
+    required String userId,
+    required String itemId,
+    required Uint8List bytes,
+  }) async {
+    _assertAuthenticatedUpload(userId);
+    if (bytes.isEmpty) {
+      throw Exception('Cutout image is empty');
+    }
+
+    final path = '$userId/wardrobe/$itemId/cutout.png';
+    return await _uploadToSupabase(
+      bucket: 'user-media',
+      path: path,
+      bytes: bytes,
+      mimeType: 'image/png',
+    );
   }
 
   static const int minGeneratedImageBytes = 50 * 1024; // 50 KB
@@ -258,14 +279,19 @@ class StorageService {
       final segments = uri.pathSegments;
       final objectIdx = segments.indexOf('object');
       if (objectIdx != -1 && segments.length > objectIdx + 2) {
-        final isSign = segments[objectIdx + 1] == 'sign' ||
+        final isSign =
+            segments[objectIdx + 1] == 'sign' ||
             segments[objectIdx + 1] == 'public' ||
             segments[objectIdx + 1] == 'authenticated';
-        final bucket = isSign ? segments[objectIdx + 2] : segments[objectIdx + 1];
+        final bucket = isSign
+            ? segments[objectIdx + 2]
+            : segments[objectIdx + 1];
         final pathStartIndex = isSign ? objectIdx + 3 : objectIdx + 2;
         final objectPath = segments.sublist(pathStartIndex).join('/');
         await _supabase.storage.from(bucket).remove([objectPath]);
-        debugPrint('🗑️ [StorageService -> Supabase] Deleted $bucket/$objectPath');
+        debugPrint(
+          '🗑️ [StorageService -> Supabase] Deleted $bucket/$objectPath',
+        );
       }
     } catch (e) {
       debugPrint('⚠️ [StorageService] deletePhoto error: $e');

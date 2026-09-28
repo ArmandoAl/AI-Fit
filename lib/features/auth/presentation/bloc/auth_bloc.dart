@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/bootstrap/web_auth_bootstrap.dart';
+import '../../../../core/services/worker_warmup_service.dart';
 import '../../data/auth_repository.dart';
 import '../../domain/user_model.dart' as app_model;
 import 'auth_event.dart';
@@ -42,12 +43,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       final bootstrapUser = WebAuthBootstrap.takePendingUser();
       if (bootstrapUser != null) {
         debugPrint('✅ AuthBloc: sesión desde bootstrap web');
+        WorkerWarmupService.warmUp();
         emit(AuthAuthenticated(bootstrapUser));
         return;
       }
 
       final user = authRepository.currentUser;
       if (user != null) {
+        WorkerWarmupService.warmUp();
         emit(AuthAuthenticated(user));
       } else {
         emit(const AuthUnauthenticated());
@@ -70,6 +73,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
       if (user != null) {
         debugPrint('✅ AuthBloc: Login exitoso (${user.id})');
+        WorkerWarmupService.warmUp();
         emit(AuthAuthenticated(user));
         return;
       }
@@ -77,6 +81,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       // Popup cancelado o redirect en curso — Firebase stream puede confirmar sesión.
       if (authRepository.currentUser != null) {
         debugPrint('✅ AuthBloc: sesión detectada vía currentUser tras login');
+        WorkerWarmupService.warmUp();
         emit(AuthAuthenticated(authRepository.currentUser!));
         return;
       }
@@ -86,6 +91,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     } catch (e) {
       debugPrint('❌ AuthBloc: Login error - $e');
       if (authRepository.currentUser != null) {
+        WorkerWarmupService.warmUp();
         emit(AuthAuthenticated(authRepository.currentUser!));
         return;
       }
@@ -105,6 +111,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         return;
       }
       debugPrint('✅ AuthBloc: authStateChanges → autenticado');
+      WorkerWarmupService.warmUp();
       emit(AuthAuthenticated(event.user!));
       return;
     }

@@ -42,20 +42,14 @@ class AIFitApp extends StatelessWidget {
           create: (context) => AuthBloc(authRepository: authRepository),
         ),
         BlocProvider(
-          create: (context) => WardrobeBloc(
-            repository: WardrobeRepositoryImpl(),
-          ),
-        ),
-        BlocProvider(
           create: (context) =>
-              ChatBloc(repository: StylistRepositoryImpl()),
+              WardrobeBloc(repository: WardrobeRepositoryImpl()),
         ),
         BlocProvider(
-          create: (context) => OutfitGenerationBloc(),
+          create: (context) => ChatBloc(repository: StylistRepositoryImpl()),
         ),
-        BlocProvider(
-          create: (context) => SavedOutfitsBloc(),
-        ),
+        BlocProvider(create: (context) => OutfitGenerationBloc()),
+        BlocProvider(create: (context) => SavedOutfitsBloc()),
       ],
       child: Builder(
         builder: (context) {
@@ -63,9 +57,9 @@ class AIFitApp extends StatelessWidget {
           return MaterialApp.router(
             title: 'AIFit Atelier',
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.darkTheme,
+            theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
-            themeMode: ThemeMode.dark,
+            themeMode: ThemeMode.light,
             routerConfig: createRouter(context),
           );
         },

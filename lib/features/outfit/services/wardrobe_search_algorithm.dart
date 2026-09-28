@@ -53,7 +53,9 @@ class WardrobeSearchAlgorithm {
               }
             }
 
-            _log('✨ pgvector matching returned ${similarityById.length} items for query "$queryText"');
+            _log(
+              '✨ pgvector matching returned ${similarityById.length} items for query "$queryText"',
+            );
 
             return _filterAndRankWithVectorBoost(
               allItems: allItems,
@@ -62,7 +64,9 @@ class WardrobeSearchAlgorithm {
             );
           }
         } catch (e) {
-          _log('⚠️ pgvector search unavailable ($e). Falling back to rule-based filtering.');
+          _log(
+            '⚠️ pgvector search unavailable ($e). Falling back to rule-based filtering.',
+          );
         }
       }
     }
@@ -94,7 +98,10 @@ class WardrobeSearchAlgorithm {
       }).toList();
 
       final minScore = intent.preferredColors.isNotEmpty ? 0.35 : 0.25;
-      final filtered = scoredItems.where((entry) => entry.value >= minScore).toList();
+      final filtered = scoredItems
+          .where((entry) => itemSatisfiesRequiredColor(entry.key, intent))
+          .where((entry) => entry.value >= minScore)
+          .toList();
       filtered.sort((a, b) => b.value.compareTo(a.value));
 
       return filtered.map((e) => e.key).toList();
@@ -179,6 +186,12 @@ class WardrobeSearchAlgorithm {
     // Si el usuario especificó colores, ser más estricto
     final minScore = intent.preferredColors.isNotEmpty ? 0.4 : 0.3;
     final filtered = scoredItems.where((entry) {
+      if (!itemSatisfiesRequiredColor(entry.key, intent)) {
+        _log(
+          '   ❌ Item ${entry.key.id} excluded: required color not confirmed by metadata',
+        );
+        return false;
+      }
       final passes = entry.value >= minScore;
       if (!passes) {
         _log(
@@ -194,6 +207,71 @@ class WardrobeSearchAlgorithm {
     _log('   Filtered ${filtered.length} items (min score: $minScore)');
 
     return filtered.map((entry) => entry.key).toList();
+  }
+
+  /// Missing or mixed color metadata cannot prove a mandatory single-color requirement.
+  static bool itemSatisfiesRequiredColor(
+    WardrobeItem item,
+    OutfitIntent intent,
+  ) {
+    final required = intent.requiredColorsByCategory;
+    final expected =
+        required[WardrobeItem.normalizeCategory(item.type)] ?? required['*'];
+    if (expected == null || expected.isEmpty) return true;
+    if (item.colors.isEmpty) return false;
+
+    final allowed = expected.map(_canonicalRequiredColor).toSet();
+    return item.colors.every((color) {
+      final actual = _canonicalRequiredColor(color);
+      return actual.isNotEmpty && allowed.contains(actual);
+    });
+  }
+
+  static bool outfitSatisfiesRequiredColors(
+    GeneratedOutfit outfit,
+    Map<String, WardrobeItem> itemsById,
+    OutfitIntent intent,
+  ) {
+    final ids = [
+      outfit.topId,
+      outfit.bottomId,
+      outfit.onePieceId,
+      outfit.shoesId,
+      outfit.outerwearId,
+      ...outfit.accessoryIds,
+    ].whereType<String>().where((id) => id.isNotEmpty);
+    for (final id in ids) {
+      final item = itemsById[id];
+      if (item == null || !itemSatisfiesRequiredColor(item, intent))
+        return false;
+    }
+    return true;
+  }
+
+  static String _canonicalRequiredColor(String color) {
+    switch (color.trim().toLowerCase().replaceAll('_', '-')) {
+      case 'negro':
+        return 'black';
+      case 'blanco':
+        return 'white';
+      case 'café':
+      case 'cafe':
+        return 'brown';
+      case 'marrón':
+      case 'marron':
+        return 'brown';
+      case 'gris':
+      case 'grey':
+        return 'gray';
+      case 'azul':
+        return 'blue';
+      case 'rojo':
+        return 'red';
+      case 'verde':
+        return 'green';
+      default:
+        return color.trim().toLowerCase().replaceAll('_', '-');
+    }
   }
 
   /// Calcula score de relevancia (0.0 - 1.0)
@@ -407,31 +485,10 @@ class WardrobeSearchAlgorithm {
 
   /// Verifica si dos colores son compatibles
   static bool _colorsMatch(String color1, String color2) {
-    // Normalizar colores
-    final c1 = color1.toLowerCase().trim();
-    final c2 = color2.toLowerCase().trim();
-
-    // Match exacto
-    if (c1 == c2) return true;
-
-    // Matches comunes
-    final colorGroups = {
-      'white': ['white', 'off-white', 'cream', 'beige', 'ivory'],
-      'black': ['black', 'navy', 'dark'],
-      'blue': ['blue', 'navy', 'denim', 'indigo'],
-      'red': ['red', 'burgundy', 'maroon'],
-      'green': ['green', 'olive', 'emerald'],
-      'brown': ['brown', 'tan', 'khaki', 'beige'],
-      'gray': ['gray', 'grey', 'charcoal', 'silver'],
-    };
-
-    for (final group in colorGroups.values) {
-      if (group.contains(c1) && group.contains(c2)) {
-        return true;
-      }
-    }
-
-    return false;
+    // Exact color identity only; compatibility is scored separately.
+    final canonical1 = _canonicalRequiredColor(color1);
+    return canonical1.isNotEmpty &&
+        canonical1 == _canonicalRequiredColor(color2);
   }
 
   /// Calcula compatibilidad entre dos prendas
@@ -556,14 +613,33 @@ class WardrobeSearchAlgorithm {
     required FilteredWardrobe wardrobe,
     required OutfitIntent intent,
   }) {
-    final tops = wardrobe.tops.take(4).toList();
-    final bottoms = wardrobe.bottoms.take(4).toList();
-    final shoes = wardrobe.shoes.take(4).toList();
-    final outerwear = wardrobe.outerwear.take(3).toList();
-    final onePieces = wardrobe.onePieces.take(3).toList();
-    final accessories = wardrobe.accessories.take(4).toList();
+    final tops = wardrobe.tops
+        .where((item) => itemSatisfiesRequiredColor(item, intent))
+        .take(4)
+        .toList();
+    final bottoms = wardrobe.bottoms
+        .where((item) => itemSatisfiesRequiredColor(item, intent))
+        .take(4)
+        .toList();
+    final shoes = wardrobe.shoes
+        .where((item) => itemSatisfiesRequiredColor(item, intent))
+        .take(4)
+        .toList();
+    final outerwear = wardrobe.outerwear
+        .where((item) => itemSatisfiesRequiredColor(item, intent))
+        .take(3)
+        .toList();
+    final onePieces = wardrobe.onePieces
+        .where((item) => itemSatisfiesRequiredColor(item, intent))
+        .take(3)
+        .toList();
+    final accessories = wardrobe.accessories
+        .where((item) => itemSatisfiesRequiredColor(item, intent))
+        .take(4)
+        .toList();
 
-    final hasTwoPiece = tops.isNotEmpty && bottoms.isNotEmpty && shoes.isNotEmpty;
+    final hasTwoPiece =
+        tops.isNotEmpty && bottoms.isNotEmpty && shoes.isNotEmpty;
     final hasOnePiece = onePieces.isNotEmpty && shoes.isNotEmpty;
 
     if (!hasTwoPiece && !hasOnePiece) {
@@ -588,8 +664,10 @@ class WardrobeSearchAlgorithm {
     }
 
     final promptText = intent.userPrompt?.toLowerCase() ?? '';
-    final mustInclude = intent.constraints?['mustInclude']?.toString().toLowerCase() ?? '';
-    final preferOnePiece = promptText.contains('vestido') ||
+    final mustInclude =
+        intent.constraints?['mustInclude']?.toString().toLowerCase() ?? '';
+    final preferOnePiece =
+        promptText.contains('vestido') ||
         promptText.contains('dress') ||
         promptText.contains('enterizo') ||
         promptText.contains('jumpsuit') ||
@@ -599,7 +677,8 @@ class WardrobeSearchAlgorithm {
 
     const targetOutfits = 3;
     for (int i = 0; i < targetOutfits; i++) {
-      final useOnePiece = hasOnePiece &&
+      final useOnePiece =
+          hasOnePiece &&
           (preferOnePiece || (!hasTwoPiece) || (i == 1 && hasOnePiece));
 
       if (useOnePiece) {
@@ -613,9 +692,13 @@ class WardrobeSearchAlgorithm {
         final compatPieceShoe = calculateCompatibility(onePiece, shoe);
         final matchPct = (compatPieceShoe * 100).round().clamp(78, 98);
 
-        final pieceLabel = onePiece.subType.isNotEmpty ? onePiece.subType : onePiece.name;
+        final pieceLabel = onePiece.subType.isNotEmpty
+            ? onePiece.subType
+            : onePiece.name;
         final shoeLabel = shoe.subType.isNotEmpty ? shoe.subType : shoe.name;
-        final accNotice = outfitAccIds.isNotEmpty ? ' con accesorios coordinados' : '';
+        final accNotice = outfitAccIds.isNotEmpty
+            ? ' con accesorios coordinados'
+            : '';
 
         final explanationEs =
             'Look completo con pieza única: combina $pieceLabel y $shoeLabel$accNotice, optimizado para $occasionDesc.';
@@ -624,13 +707,15 @@ class WardrobeSearchAlgorithm {
 
         outfits.add(
           GeneratedOutfit(
-            id: 'rule_outfit_${i + 1}',
+            id: GeneratedOutfit.ensureUuid(null),
             onePieceId: onePiece.id,
             shoesId: shoe.id,
             outerwearId: coat?.id,
             accessoryIds: outfitAccIds,
             matchPercentage: matchPct,
-            compatibilityScore: double.parse(compatPieceShoe.toStringAsFixed(2)),
+            compatibilityScore: double.parse(
+              compatPieceShoe.toStringAsFixed(2),
+            ),
             explanation: explanationEn,
             explanationEs: explanationEs,
             metadata: {
@@ -656,9 +741,13 @@ class WardrobeSearchAlgorithm {
         final matchPct = (avgCompat * 100).round().clamp(75, 98);
 
         final topLabel = top.subType.isNotEmpty ? top.subType : top.name;
-        final bottomLabel = bottom.subType.isNotEmpty ? bottom.subType : bottom.name;
+        final bottomLabel = bottom.subType.isNotEmpty
+            ? bottom.subType
+            : bottom.name;
         final shoeLabel = shoe.subType.isNotEmpty ? shoe.subType : shoe.name;
-        final accNotice = outfitAccIds.isNotEmpty ? ' complementado con accesorios a tono' : '';
+        final accNotice = outfitAccIds.isNotEmpty
+            ? ' complementado con accesorios a tono'
+            : '';
 
         final explanationEs =
             'Look equilibrado que combina $topLabel con $bottomLabel y $shoeLabel$accNotice, optimizado para $occasionDesc.';
@@ -667,7 +756,7 @@ class WardrobeSearchAlgorithm {
 
         outfits.add(
           GeneratedOutfit(
-            id: 'rule_outfit_${i + 1}',
+            id: GeneratedOutfit.ensureUuid(null),
             topId: top.id,
             bottomId: bottom.id,
             shoesId: shoe.id,
@@ -692,4 +781,3 @@ class WardrobeSearchAlgorithm {
     return outfits;
   }
 }
-

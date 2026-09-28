@@ -13,6 +13,7 @@ No markdown, no commentary outside JSON.
   "reasoning": "Weekend brunch implies relaxed casual dress, warm weather, light colors.",
   "occasion": "casual",
   "preferredColors": ["beige", "white"],
+  "requiredColorsByCategory": {},
   "styleTags": ["casual", "minimalist"],
   "season": "summer",
   "weather": "warm",
@@ -46,6 +47,7 @@ $fullExampleJson
   "reasoning": "string (required)",
   "occasion": "casual" | "formal" | "sport" | "party" | "work" | "date" | "everyday" | null,
   "preferredColors": ["string"],
+  "requiredColorsByCategory": {"*": ["black"], "shoes": ["white"]},
   "styleTags": ["string"],
   "season": "spring" | "summer" | "fall" | "winter" | null,
   "weather": "sunny" | "rainy" | "cold" | "warm" | null,
@@ -69,6 +71,8 @@ $fullExampleJson
 - semanticTargets helps match wardrobe AI metadata (occasion_vectors, style_scores, climate_compatibility).
 - Map user intent to occasionSlugs and climateKeys when implied.
 - preferredColors: use standard ENGLISH names only (black, white, gray, navy, blue, red, green, brown, beige, pink, yellow, orange, purple) — even if the user wrote in Spanish (e.g. negro→black, azul→blue).
+- requiredColorsByCategory contains ONLY explicit mandatory color instructions. Use "*" when every visible garment must have the color, or category keys (top, bottom, shoes, outerwear, one_piece, accessories) for scoped requirements and exceptions. Example: "all black except white shoes" → {"*": ["black"], "shoes": ["white"]}. Put suggestions and stylistic preferences in preferredColors, never in requiredColorsByCategory.
+- Mandatory color means exact color identity. Do not treat navy, brown, beige, or dark as black; compatibility is not compliance. If color intent is not explicit, leave requiredColorsByCategory empty.
 - styleTags and occasion: use English slugs (casual, formal, sporty, etc.).
 - The user request may be in Spanish; interpret it correctly but keep all JSON enum/slug values in English.
 

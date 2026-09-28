@@ -309,6 +309,55 @@ class _WardrobeItemDetailPageState extends State<WardrobeItemDetailPage> {
     }
   }
 
+  Future<void> _confirmDeleteItem() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('¿Eliminar prenda?'),
+        content: const Text(
+          'Esta acción eliminará la prenda de tu armario de forma permanente.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        await context.read<WardrobeBloc>().deleteItems([_currentItem.id]);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo eliminar la prenda: $e')),
+        );
+        return;
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Prenda eliminada'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -317,15 +366,22 @@ class _WardrobeItemDetailPageState extends State<WardrobeItemDetailPage> {
           _isEditing ? AppStringsEs.editItem : AppStringsEs.itemDetailsTitle,
         ),
         actions: [
-          if (!_isEditing)
+          if (!_isEditing) ...[
             IconButton(
               icon: const Icon(Icons.edit),
+              tooltip: 'Editar',
               onPressed: () {
                 setState(() {
                   _isEditing = true;
                 });
               },
             ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: AppColors.error),
+              tooltip: 'Eliminar prenda',
+              onPressed: _confirmDeleteItem,
+            ),
+          ],
           if (_isEditing)
             IconButton(
               icon: _isSaving
@@ -354,7 +410,12 @@ class _WardrobeItemDetailPageState extends State<WardrobeItemDetailPage> {
                 fit: StackFit.expand,
                 children: [
                   AppNetworkImage(
-                    imageUrl: _currentItem.displayImageUrl,
+                    imageUrl: (_currentItem.cutoutPath != null &&
+                            _currentItem.cutoutPath!.trim().isNotEmpty)
+                        ? _currentItem.cutoutPath!.trim()
+                        : (_currentItem.imageUrl.trim().isNotEmpty
+                            ? _currentItem.imageUrl.trim()
+                            : (_currentItem.sourcePath ?? '')),
                     fit: (_currentItem.cutoutPath != null && _currentItem.cutoutPath!.isNotEmpty)
                         ? BoxFit.contain
                         : BoxFit.cover,
