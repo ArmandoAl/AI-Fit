@@ -11,10 +11,10 @@ import '../../../core/services/deepseek_service.dart';
 import '../../../core/services/gateway_ai_service_impl.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/services/supabase_client.dart';
-import '../domain/wardrobe_ai_metadata.dart';
-import '../domain/wardrobe_analysis_prompt.dart';
-import '../domain/wardrobe_item_model.dart';
-import 'wardrobe_repository.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_ai_metadata.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_analysis_prompt.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/wardrobe/data/wardrobe_repository.dart';
 
 class WardrobeRepositoryImpl implements WardrobeRepository {
   static final _itemProcessedController =

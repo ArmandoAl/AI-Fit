@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../domain/chat_models.dart';
+import 'package:aifit_core/features/stylist/domain/chat_models.dart';
 
 class StylistChatBubble extends StatelessWidget {
   final ChatMessage message;

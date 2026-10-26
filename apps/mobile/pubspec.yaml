@@ -30,6 +30,8 @@ resolution: workspace
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  aifit_core:
+    path: ../../packages/core
   bloc: ^9.2.0
   cached_network_image: ^3.4.1
   cupertino_icons: ^1.0.8

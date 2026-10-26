@@ -1,8 +1,8 @@
-import '../../../core/l10n/app_strings_es.dart';
-import '../domain/chat_models.dart';
-import '../domain/stylist_intent_state.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
+import 'package:aifit_core/features/stylist/domain/chat_models.dart';
+import 'package:aifit_core/features/stylist/domain/stylist_intent_state.dart';
 import '../services/stylist_chat_service.dart';
-import 'stylist_repository.dart';
+import 'package:aifit_core/features/stylist/data/stylist_repository.dart';
 
 class StylistRepositoryImpl implements StylistRepository {
   final StylistChatService _chatService;

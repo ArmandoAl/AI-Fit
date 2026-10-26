@@ -6,17 +6,17 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../core/platform/image_preview.dart';
 import '../../../../core/platform/app_image.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/widgets/app_page_app_bar.dart';
 import '../../../../core/widgets/app_tutorial_overlay.dart';
 import '../../../../core/utils/keyboard_utils.dart';
 import '../../../../core/widgets/shell_bottom_insets.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
-import '../../../auth/presentation/bloc/auth_state.dart';
-import '../../../auth/presentation/bloc/auth_event.dart';
+import 'package:aifit_core/features/auth/presentation/bloc/auth_state.dart';
+import 'package:aifit_core/features/auth/presentation/bloc/auth_event.dart';
 import 'dart:convert';
 import '../../data/profile_repository.dart';
-import '../../domain/user_identity_profile.dart';
+import 'package:aifit_core/features/profile/domain/user_identity_profile.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});

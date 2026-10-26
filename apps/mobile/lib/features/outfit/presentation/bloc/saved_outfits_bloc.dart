@@ -1,8 +1,8 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart';
 import '../../data/saved_outfits_repository.dart';
-import 'saved_outfits_event.dart';
-import 'saved_outfits_state.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/saved_outfits_event.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/saved_outfits_state.dart';
 
 /// BLoC para manejar outfits guardados
 class SavedOutfitsBloc extends Bloc<SavedOutfitsEvent, SavedOutfitsState> {

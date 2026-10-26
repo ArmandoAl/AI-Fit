@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 

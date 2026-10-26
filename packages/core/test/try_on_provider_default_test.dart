@@ -1,5 +1,5 @@
-import 'package:aifit/features/outfit/domain/outfit_models.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('all try-on positions use the Seedream default', () {

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../features/auth/data/auth_repository.dart';
-import '../../features/auth/domain/user_model.dart' as app_model;
+import 'package:aifit_core/features/auth/domain/user_model.dart' as app_model;
 
 /// Sesión resuelta en [main] antes de que el router consuma la URL.
 class WebAuthBootstrap {

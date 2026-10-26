@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../stylist/domain/chat_models.dart';
+import 'package:aifit_core/features/stylist/domain/chat_models.dart';
 import '../../../../core/widgets/wearing_items_list.dart';
 
 class OutfitResultPage extends StatelessWidget {

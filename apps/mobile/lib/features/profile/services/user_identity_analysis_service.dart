@@ -10,7 +10,7 @@ import '../../../core/services/storage_service.dart';
 import '../../../core/services/supabase_client.dart';
 import '../../../core/utils/identity_photo_collage.dart';
 import '../../../core/utils/image_compression_util.dart';
-import '../domain/user_identity_profile.dart';
+import 'package:aifit_core/features/profile/domain/user_identity_profile.dart';
 
 class UserIdentityAnalysisService {
   final AIService _aiService;

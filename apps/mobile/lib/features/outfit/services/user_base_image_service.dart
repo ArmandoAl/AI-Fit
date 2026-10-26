@@ -1,13 +1,13 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
-import '../../../core/constants/identity_consistency_prompt.dart';
+import 'package:aifit_core/core/constants/identity_consistency_prompt.dart';
 import '../../../core/platform/network_image_loader.dart';
 import '../../../core/services/deepseek_service.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/services/supabase_client.dart';
 import '../../../core/utils/identity_photo_collage.dart';
-import '../../profile/domain/user_identity_profile.dart';
+import 'package:aifit_core/features/profile/domain/user_identity_profile.dart';
 import '../../profile/services/user_identity_analysis_service.dart';
 
 class UserBaseImageService {

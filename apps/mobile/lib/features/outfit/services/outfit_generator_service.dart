@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../../core/services/deepseek_service.dart';
 import '../../../core/utils/ai_telemetry_logger.dart';
-import '../../wardrobe/domain/wardrobe_item_model.dart';
-import '../domain/outfit_models.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart';
 import 'wardrobe_search_algorithm.dart';
 
 /// Genera outfits razonando sobre metadatos estructurados de texto vía DeepSeek (`ai-router`).

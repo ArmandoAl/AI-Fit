@@ -3,8 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/services/supabase_client.dart';
-import '../domain/outfit_models.dart';
-import '../domain/saved_outfit_model.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart';
+import 'package:aifit_core/features/outfit/domain/saved_outfit_model.dart';
 
 /// Repositorio de outfits guardados 100% sobre Supabase Postgres
 /// con modelo relacional (`outfit_generations`, `outfits`, `outfit_items`).

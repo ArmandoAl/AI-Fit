@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/utils/keyboard_utils.dart';
@@ -9,19 +9,19 @@ import '../../../../core/widgets/app_page_app_bar.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/widgets/shell_bottom_insets.dart';
 import '../bloc/chat_bloc.dart';
-import '../bloc/chat_event.dart';
-import '../bloc/chat_state.dart';
-import '../../domain/chat_models.dart';
+import 'package:aifit_core/features/stylist/presentation/bloc/chat_event.dart';
+import 'package:aifit_core/features/stylist/presentation/bloc/chat_state.dart';
+import 'package:aifit_core/features/stylist/domain/chat_models.dart';
 import '../../../outfit/presentation/bloc/saved_outfits_bloc.dart';
-import '../../../outfit/presentation/bloc/saved_outfits_event.dart';
-import '../../../outfit/presentation/bloc/saved_outfits_state.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/saved_outfits_event.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/saved_outfits_state.dart';
 import '../widgets/stylist_chat_bubble.dart';
 import '../widgets/stylist_generate_cta_card.dart';
 import '../widgets/stylist_generation_loading_card.dart';
 import '../widgets/stylist_outfit_carousel.dart';
 import '../widgets/stylist_outfit_preview_card.dart';
 import '../widgets/stylist_typing_indicator.dart';
-import '../../../wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
 import '../../../wardrobe/presentation/pages/wardrobe_item_detail_page.dart';
 
 /// Ítem normalizado para el ListView del chat (agrupa outfits en carrusel).

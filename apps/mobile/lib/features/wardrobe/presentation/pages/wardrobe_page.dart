@@ -13,16 +13,16 @@ import '../../../../core/widgets/app_page_app_bar.dart';
 import '../../../../core/widgets/atelier_empty_state.dart';
 import '../../../../core/widgets/wardrobe_item_card.dart';
 import '../../../../core/widgets/saved_outfit_card.dart';
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../outfit/presentation/bloc/saved_outfits_bloc.dart';
-import '../../../outfit/presentation/bloc/saved_outfits_event.dart';
-import '../../../outfit/presentation/bloc/saved_outfits_state.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/saved_outfits_event.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/saved_outfits_state.dart';
 import '../../../outfit/presentation/widgets/outfit_detail_sheet.dart';
-import '../../../wardrobe/domain/wardrobe_item_model.dart';
-import '../../../wardrobe/domain/wardrobe_palette.dart';
-import '../bloc/wardrobe_bloc.dart';
-import '../bloc/wardrobe_event.dart';
-import '../bloc/wardrobe_state.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_palette.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_event.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_state.dart';
 import 'add_wardrobe_item_page.dart';
 
 enum _WardrobeTab { clothes, looks }

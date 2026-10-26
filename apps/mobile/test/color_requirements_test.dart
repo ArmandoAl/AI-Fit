@@ -1,7 +1,7 @@
-import 'package:aifit/features/outfit/domain/outfit_models.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart';
 import 'package:aifit/features/outfit/services/wardrobe_search_algorithm.dart';
 import 'package:aifit/features/outfit/services/outfit_intent_analyzer.dart';
-import 'package:aifit/features/wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 WardrobeItem _item(String id, String type, List<String> colors) => WardrobeItem(

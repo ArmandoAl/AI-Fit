@@ -1,4 +1,4 @@
-import 'package:aifit/features/outfit/domain/saved_outfit_model.dart';
+import 'package:aifit_core/features/outfit/domain/saved_outfit_model.dart';
 
 /// Estados para el BLoC de outfits guardados
 abstract class SavedOutfitsState {}

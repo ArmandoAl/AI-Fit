@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:bloc/bloc.dart';
 import '../../data/wardrobe_repository.dart';
 import '../../domain/wardrobe_item_model.dart';
 import 'wardrobe_event.dart';

@@ -5,11 +5,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:aifit/core/services/worker_warmup_service.dart';
 import 'package:aifit/core/widgets/wardrobe_item_card.dart';
 import 'package:aifit/features/wardrobe/presentation/pages/wardrobe_page.dart';
-import 'package:aifit/features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
-import 'package:aifit/features/wardrobe/presentation/bloc/wardrobe_event.dart';
-import 'package:aifit/features/wardrobe/presentation/bloc/wardrobe_state.dart';
-import 'package:aifit/features/wardrobe/data/wardrobe_repository.dart';
-import 'package:aifit/features/wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_event.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_state.dart';
+import 'package:aifit_core/features/wardrobe/data/wardrobe_repository.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
 
 class _FakeWardrobeRepository implements WardrobeRepository {
   final _controller = StreamController<WardrobeProcessedUpdate>.broadcast();

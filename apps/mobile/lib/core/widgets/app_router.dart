@@ -16,10 +16,10 @@ import '../widgets/main_layout.dart';
 import '../widgets/shell_tab_transition.dart';
 import '../../core/services/onboarding_gate_service.dart';
 import '../../features/auth/presentation/bloc/auth_bloc.dart';
-import '../../features/auth/presentation/bloc/auth_state.dart';
+import 'package:aifit_core/features/auth/presentation/bloc/auth_state.dart';
 import '../../features/auth/presentation/pages/splash_page.dart';
-import '../../features/stylist/domain/chat_models.dart' as chat_models;
-import '../../features/outfit/domain/outfit_models.dart' as outfit_models;
+import 'package:aifit_core/features/stylist/domain/chat_models.dart' as chat_models;
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart' as outfit_models;
 
 // Definimos una clave global para el navegador
 final _rootNavigatorKey = GlobalKey<NavigatorState>();

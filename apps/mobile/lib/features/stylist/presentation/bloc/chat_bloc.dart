@@ -1,13 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/l10n/app_strings_es.dart';
-import '../../data/stylist_repository.dart';
-import '../../domain/chat_models.dart';
-import '../../../outfit/domain/outfit_models.dart' as pipeline;
-import '../../../outfit/domain/try_on_status.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
+import 'package:aifit_core/features/stylist/data/stylist_repository.dart';
+import 'package:aifit_core/features/stylist/domain/chat_models.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart' as pipeline;
+import 'package:aifit_core/features/outfit/domain/try_on_status.dart';
 import '../../../outfit/services/outfit_service.dart';
-import 'chat_event.dart';
-import 'chat_state.dart';
+import 'package:aifit_core/features/stylist/presentation/bloc/chat_event.dart';
+import 'package:aifit_core/features/stylist/presentation/bloc/chat_state.dart';
 
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final StylistRepository repository;

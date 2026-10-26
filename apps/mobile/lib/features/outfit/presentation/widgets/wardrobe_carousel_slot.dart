@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/widgets/glowing_border_card.dart';
-import '../../../wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
 
 /// Slot individual interactivo tipo carrusel (Cher Horowitz Clueless Wardrobe).
 ///

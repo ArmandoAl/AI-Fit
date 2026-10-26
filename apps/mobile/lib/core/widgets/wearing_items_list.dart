@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'app_network_image.dart';
-import '../l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/utils/mock_data.dart';
-import '../../../../features/wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
 
 class WearingItemsList extends StatelessWidget {
   final List<String> itemIds;

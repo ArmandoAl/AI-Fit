@@ -1,0 +1,13 @@
+name: aifit_core
+description: Modelos, reglas, contratos de repositorio y BLoC de armario de AI-Fit compartidos por la app Flutter y la interfaz Jaspr. Dart puro, sin Flutter.
+publish_to: none
+environment:
+  sdk: ^3.9.2
+resolution: workspace
+dependencies:
+  bloc: ^9.2.0
+  equatable: ^2.0.8
+  uuid: ^4.5.2
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.31.1

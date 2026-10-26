@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import '../../../core/services/deepseek_service.dart';
 import '../../../core/services/supabase_client.dart';
-import '../../wardrobe/domain/wardrobe_item_model.dart';
-import '../domain/outfit_models.dart';
-import 'wardrobe_metadata_scorer.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart';
+import 'package:aifit_core/features/outfit/services/wardrobe_metadata_scorer.dart';
 
 /// Algoritmo de búsqueda y filtrado de prendas
 ///

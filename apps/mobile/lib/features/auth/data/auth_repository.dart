@@ -4,7 +4,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/services/supabase_client.dart';
-import '../domain/user_model.dart' as app_model;
+import 'package:aifit_core/features/auth/domain/user_model.dart' as app_model;
 
 /// Repositorio de Autenticación migrado 100% a Supabase Auth.
 /// Erradica por completo las dependencias de FirebaseAuth y Firestore.

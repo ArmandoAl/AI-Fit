@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../core/constants/identity_consistency_prompt.dart';
+import 'package:aifit_core/core/constants/identity_consistency_prompt.dart';
 import '../../../core/services/deepseek_service.dart';
 import '../../../core/services/supabase_client.dart';
-import '../../profile/domain/user_identity_profile.dart';
-import '../domain/outfit_models.dart';
+import 'package:aifit_core/features/profile/domain/user_identity_profile.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart';
 
 class VirtualTryOnService {
   final DeepSeekService _gateway;

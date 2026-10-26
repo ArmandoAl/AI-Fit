@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../features/outfit/domain/saved_outfit_model.dart';
-import '../../features/wardrobe/domain/wardrobe_palette.dart';
-import '../l10n/app_strings_es.dart';
+import 'package:aifit_core/features/outfit/domain/saved_outfit_model.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_palette.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import 'app_network_image.dart';

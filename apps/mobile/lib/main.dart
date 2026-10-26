@@ -8,7 +8,7 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/app_router.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/auth/data/auth_repository.dart';
-import 'features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
 import 'features/wardrobe/data/wardrobe_repository_impl.dart';
 import 'features/stylist/presentation/bloc/chat_bloc.dart';
 import 'features/stylist/data/stylist_repository_impl.dart';

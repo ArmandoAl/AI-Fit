@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/theme/app_colors.dart';
 
 class StylistGenerateCtaCard extends StatelessWidget {

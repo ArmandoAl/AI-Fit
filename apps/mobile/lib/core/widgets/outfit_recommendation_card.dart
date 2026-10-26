@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/app_colors.dart';
-import '../../features/stylist/domain/chat_models.dart';
-import '../l10n/app_strings_es.dart';
+import 'package:aifit_core/features/stylist/domain/chat_models.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import 'app_network_image.dart';
 
 class OutfitRecommendationCard extends StatelessWidget {

@@ -5,9 +5,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/bootstrap/web_auth_bootstrap.dart';
 import '../../../../core/services/worker_warmup_service.dart';
 import '../../data/auth_repository.dart';
-import '../../domain/user_model.dart' as app_model;
-import 'auth_event.dart';
-import 'auth_state.dart';
+import 'package:aifit_core/features/auth/domain/user_model.dart' as app_model;
+import 'package:aifit_core/features/auth/presentation/bloc/auth_event.dart';
+import 'package:aifit_core/features/auth/presentation/bloc/auth_state.dart';
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final AuthRepository authRepository;

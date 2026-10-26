@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'app_network_image.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
-import '../../features/wardrobe/domain/wardrobe_item_model.dart';
-import '../../features/wardrobe/domain/wardrobe_palette.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_palette.dart';
 import '../../features/wardrobe/presentation/pages/wardrobe_item_detail_page.dart';
 
 class WardrobeItemCard extends StatelessWidget {

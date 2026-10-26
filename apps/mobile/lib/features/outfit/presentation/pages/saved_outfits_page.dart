@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_page_app_bar.dart';
 import '../../../../core/widgets/atelier_empty_state.dart';
 import '../../../../core/widgets/saved_outfit_card.dart';
 import '../bloc/saved_outfits_bloc.dart';
-import '../bloc/saved_outfits_event.dart';
-import '../bloc/saved_outfits_state.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/saved_outfits_event.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/saved_outfits_state.dart';
 import '../widgets/outfit_detail_sheet.dart';
-import '../../../wardrobe/domain/wardrobe_palette.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_palette.dart';
 
 /// Página para mostrar outfits guardados
 class SavedOutfitsPage extends StatefulWidget {

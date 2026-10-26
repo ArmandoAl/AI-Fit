@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../domain/wardrobe_palette.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_palette.dart';
 
 /// Selector visual interactivo de categorías para AI-Fit con estética Dark Glam / Y2K Cyber-Goth.
 /// Soporta 'top', 'bottom', 'one_piece', 'shoes', 'outerwear', 'accessories' (y opcionalmente 'All').

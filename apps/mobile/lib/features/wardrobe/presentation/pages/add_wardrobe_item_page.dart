@@ -4,16 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/platform/image_preview.dart';
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/platform/app_image.dart';
 import '../../../../core/services/native_cutout_service.dart';
-import '../../domain/wardrobe_palette.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_palette.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
-import '../../../auth/presentation/bloc/auth_state.dart';
+import 'package:aifit_core/features/auth/presentation/bloc/auth_state.dart';
 import '../../data/wardrobe_repository_impl.dart';
-import '../bloc/wardrobe_bloc.dart';
-import '../bloc/wardrobe_event.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_event.dart';
 import '../widgets/category_selector.dart';
 
 class AddWardrobeItemPage extends StatefulWidget {

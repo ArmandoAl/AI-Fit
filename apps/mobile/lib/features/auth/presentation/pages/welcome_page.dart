@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/services/onboarding_gate_service.dart';
 import '../../../../core/services/onboarding_prefs.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -10,7 +10,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_tutorial_overlay.dart';
 import '../../../../core/widgets/atelier_wordmark.dart';
 import '../bloc/auth_bloc.dart';
-import '../bloc/auth_state.dart';
+import 'package:aifit_core/features/auth/presentation/bloc/auth_state.dart';
 
 /// Pantalla de bienvenida. El tutorial ya no es un carrusel de texto de 3
 /// páginas: se muestra una sola vez como modal (AppTutorialOverlay), y puede

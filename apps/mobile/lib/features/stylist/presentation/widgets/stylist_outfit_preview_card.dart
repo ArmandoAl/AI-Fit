@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/cold_start_loader.dart';
-import '../../../outfit/domain/try_on_status.dart';
-import '../../domain/chat_models.dart';
-import '../../../wardrobe/presentation/bloc/wardrobe_bloc.dart';
-import '../../../wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/outfit/domain/try_on_status.dart';
+import 'package:aifit_core/features/stylist/domain/chat_models.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
 
 class StylistOutfitPreviewCard extends StatelessWidget {
   final ChatOutfitPreview preview;

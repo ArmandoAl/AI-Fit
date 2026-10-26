@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import '../../../core/services/deepseek_service.dart';
-import '../../wardrobe/domain/wardrobe_palette.dart';
-import '../domain/outfit_intent_prompt.dart';
-import '../domain/outfit_models.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_palette.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_intent_prompt.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart';
 
 /// Fase 1: Analiza el prompt del usuario → [OutfitIntent] JSON estructurado.
 ///

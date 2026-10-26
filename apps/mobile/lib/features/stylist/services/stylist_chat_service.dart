@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../../core/services/deepseek_service.dart';
-import '../../wardrobe/domain/wardrobe_palette.dart';
-import '../domain/stylist_chat_response.dart';
-import '../domain/stylist_intent_state.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_palette.dart';
+import 'package:aifit_core/features/stylist/domain/stylist_chat_response.dart';
+import 'package:aifit_core/features/stylist/domain/stylist_intent_state.dart';
 
 /// Servicio de chat del estilista personal — enrutado server-side vía `ai-router` (DeepSeek).
 class StylistChatService {

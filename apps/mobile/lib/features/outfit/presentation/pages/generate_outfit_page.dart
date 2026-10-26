@@ -1,11 +1,11 @@
-import '../../../wardrobe/presentation/bloc/wardrobe_bloc.dart';
-import '../../../wardrobe/presentation/bloc/wardrobe_event.dart';
-import '../../../wardrobe/presentation/bloc/wardrobe_state.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_event.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_state.dart';
 import '../../../wardrobe/presentation/pages/wardrobe_item_detail_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/keyboard_utils.dart';
 import '../../../../core/widgets/app_network_image.dart';
@@ -13,11 +13,11 @@ import '../../../../core/widgets/app_page_app_bar.dart';
 import '../../../../core/widgets/atelier_section_header.dart';
 import '../../../../core/widgets/cold_start_loader.dart';
 import '../bloc/outfit_generation_bloc.dart';
-import '../bloc/outfit_generation_event.dart';
-import '../bloc/outfit_generation_state.dart';
-import '../../domain/outfit_models.dart';
-import '../../domain/try_on_status.dart';
-import '../../../stylist/domain/chat_models.dart' as chat_models;
+import 'package:aifit_core/features/outfit/presentation/bloc/outfit_generation_event.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/outfit_generation_state.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart';
+import 'package:aifit_core/features/outfit/domain/try_on_status.dart';
+import 'package:aifit_core/features/stylist/domain/chat_models.dart' as chat_models;
 
 /// Página para generar outfits usando IA
 class GenerateOutfitPage extends StatefulWidget {

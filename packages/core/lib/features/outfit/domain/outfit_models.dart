@@ -1,7 +1,7 @@
 /// Modelos de datos para el sistema de generación de outfits
 library;
 
-import 'package:aifit/paths.dart';
+import '../../wardrobe/domain/wardrobe_item_model.dart';
 import 'package:uuid/uuid.dart';
 import '../../profile/domain/user_identity_profile.dart';
 import '../../wardrobe/domain/wardrobe_palette.dart';

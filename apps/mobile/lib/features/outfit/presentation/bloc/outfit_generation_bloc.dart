@@ -1,10 +1,10 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart';
-import '../../domain/outfit_models.dart';
-import '../../domain/try_on_status.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart';
+import 'package:aifit_core/features/outfit/domain/try_on_status.dart';
 import '../../services/outfit_service.dart';
-import 'outfit_generation_event.dart';
-import 'outfit_generation_state.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/outfit_generation_event.dart';
+import 'package:aifit_core/features/outfit/presentation/bloc/outfit_generation_state.dart';
 
 /// BLoC con flujo progresivo P1: outfits primero, try-on bajo demanda.
 class OutfitGenerationBloc

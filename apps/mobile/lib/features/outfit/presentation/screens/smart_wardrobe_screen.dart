@@ -5,10 +5,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/gradient_pill_button.dart';
-import '../../../wardrobe/domain/wardrobe_item_model.dart';
-import '../../../wardrobe/presentation/bloc/wardrobe_bloc.dart';
-import '../../../wardrobe/presentation/bloc/wardrobe_state.dart';
-import '../../domain/outfit_models.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_state.dart';
+import 'package:aifit_core/features/outfit/domain/outfit_models.dart';
 import '../../services/outfit_service.dart';
 import '../widgets/match_score_badge.dart';
 import '../widgets/wardrobe_carousel_slot.dart';

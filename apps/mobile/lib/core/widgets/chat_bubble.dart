@@ -1,4 +1,4 @@
-import 'package:aifit/features/stylist/domain/chat_models.dart';
+import 'package:aifit_core/features/stylist/domain/chat_models.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 

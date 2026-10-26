@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../platform/network_image_loader.dart';
-import '../utils/concurrent_task_pool.dart';
+import 'package:aifit_core/core/utils/concurrent_task_pool.dart';
 import '../utils/image_compression_util.dart';
 import '../utils/image_pipeline_config.dart';
 import '../utils/ui_frame_yield.dart';

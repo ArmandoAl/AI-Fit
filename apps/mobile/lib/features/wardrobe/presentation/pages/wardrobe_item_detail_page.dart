@@ -1,4 +1,4 @@
-import '../../../../core/l10n/app_strings_es.dart';
+import 'package:aifit_core/core/l10n/app_strings_es.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -7,14 +7,14 @@ import '../../../../core/platform/app_image.dart';
 import '../../../../core/platform/network_image_loader.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/gateway_ai_service_impl.dart';
-import '../../domain/wardrobe_ai_metadata.dart';
-import '../../domain/wardrobe_analysis_prompt.dart';
-import '../../domain/wardrobe_item_model.dart';
-import '../../domain/wardrobe_palette.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_ai_metadata.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_analysis_prompt.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_item_model.dart';
+import 'package:aifit_core/features/wardrobe/domain/wardrobe_palette.dart';
 import '../../data/wardrobe_repository_impl.dart';
-import '../bloc/wardrobe_bloc.dart';
-import '../bloc/wardrobe_event.dart';
-import '../../../stylist/domain/chat_models.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_bloc.dart';
+import 'package:aifit_core/features/wardrobe/presentation/bloc/wardrobe_event.dart';
+import 'package:aifit_core/features/stylist/domain/chat_models.dart';
 import '../../../outfit/services/outfit_service.dart';
 import '../../../simulation/presentation/pages/outfit_result_page.dart';
 

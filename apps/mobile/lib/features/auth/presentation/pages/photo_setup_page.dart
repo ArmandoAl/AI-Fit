@@ -11,7 +11,7 @@ import '../../../../core/widgets/identity_photo_grid.dart';
 import '../../../onboarding/services/photo_upload_service.dart';
 import '../../../profile/data/profile_repository.dart';
 import '../bloc/auth_bloc.dart';
-import '../bloc/auth_state.dart';
+import 'package:aifit_core/features/auth/presentation/bloc/auth_state.dart';
 
 class PhotoSetupPage extends StatefulWidget {
   const PhotoSetupPage({super.key});
