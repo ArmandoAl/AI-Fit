@@ -5,7 +5,7 @@
         "default": {
           "projectId": "aifit-a7f6b",
           "appId": "1:268248668862:android:4fb9ca0c4627a45a835cef",
-          "fileOutput": "android/app/google-services.json"
+          "fileOutput": "apps/mobile/android/app/google-services.json"
         }
       },
       "ios": {
@@ -13,7 +13,7 @@
           "projectId": "aifit-a7f6b",
           "appId": "1:268248668862:ios:f0db0f429ce41a2e835cef",
           "uploadDebugSymbols": false,
-          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+          "fileOutput": "apps/mobile/ios/Runner/GoogleService-Info.plist"
         }
       },
       "macos": {
@@ -21,11 +21,11 @@
           "projectId": "aifit-a7f6b",
           "appId": "1:268248668862:ios:f0db0f429ce41a2e835cef",
           "uploadDebugSymbols": false,
-          "fileOutput": "macos/Runner/GoogleService-Info.plist"
+          "fileOutput": "apps/mobile/macos/Runner/GoogleService-Info.plist"
         }
       },
       "dart": {
-        "lib/firebase_options.dart": {
+        "apps/mobile/lib/firebase_options.dart": {
           "projectId": "aifit-a7f6b",
           "configurations": {
             "android": "1:268248668862:android:4fb9ca0c4627a45a835cef",
@@ -38,7 +38,7 @@
     }
   },
   "hosting": {
-    "public": "build/web",
+    "public": "apps/mobile/build/web",
     "ignore": [
       "firebase.json",
       "**/.*",

@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "▶ Building Flutter web (WASM, release)..."
-flutter build web --wasm --release
+(cd apps/mobile && flutter build web --wasm --release)
 
 echo "▶ Deploying to Firebase Hosting (project: aifit-a7f6b)..."
 firebase deploy --only hosting

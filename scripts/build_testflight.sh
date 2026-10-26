@@ -8,4 +8,5 @@ if [[ ! -f env.json ]]; then
   exit 1
 fi
 
-exec fvm flutter build ipa --release --dart-define-from-file=env.json "$@"
+cd apps/mobile
+exec fvm flutter build ipa --release --dart-define-from-file=../../env.json "$@"

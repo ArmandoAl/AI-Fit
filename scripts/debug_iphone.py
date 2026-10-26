@@ -24,4 +24,4 @@ if config.get("flutterMode"):
 command += config.get("toolArgs", [])
 command.append(config.get("program", "lib/main.dart"))
 
-raise SystemExit(subprocess.run(command, cwd=ROOT).returncode)
+raise SystemExit(subprocess.run(command, cwd=ROOT / "apps/mobile").returncode)
