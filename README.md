@@ -1,5 +1,7 @@
 # AIFit — Atelier de moda con IA
 
+> **Monorepo** (rama `migration/jaspr-server-20261026`): `apps/mobile` (Flutter), `apps/web` (Jaspr), `packages/core` y `packages/supabase_data`. Desarrollo desde el servidor y preview web: [`docs/SERVER_DEVELOPMENT.md`](docs/SERVER_DEVELOPMENT.md). Los comandos de abajo (`flutter run`, `flutter build …`) se ejecutan ahora desde `apps/mobile`.
+
 AIFit convierte el armario real de una persona en un **grafo semántico de prendas** y genera looks personalizados con try-on virtual. No recomienda catálogo: trabaja con lo que ya tienes.
 
 Este README documenta las **tecnologías**, cómo se **da contexto a los modelos** y se **comprimen las imágenes**, los **modelos de outfit**, y la **arquitectura / organización de carpetas**.

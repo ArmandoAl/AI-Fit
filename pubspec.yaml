@@ -6,3 +6,4 @@ workspace:
   - packages/core
   - packages/supabase_data
   - apps/mobile
+  - apps/web

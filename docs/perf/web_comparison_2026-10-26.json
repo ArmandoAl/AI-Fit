@@ -1,0 +1,52 @@
+{
+  "descripcion": "Carga en frío de la pantalla de acceso, caché desactivada, mediana de 5 corridas. Perfil teléfono: CPU x4 y 4G (1.6 Mbps/150 ms). Flutter Web = apps/mobile compilado con `flutter build web --wasm --release` (lo que publica scripts/deploy_web.sh) en una copia temporal; sus fuentes y runtime salen en parte de CDN (externalKB).",
+  "chrome": "156.0.8078.47",
+  "jaspr": {
+    "escritorio": {
+      "ownKB": 139.4,
+      "externalKB": 0,
+      "requests": 3,
+      "readyMs": 97,
+      "fcpMs": 84,
+      "lcpMs": 84,
+      "tbtMs": 0,
+      "cls": 0
+    },
+    "telefono_cpu4x_4g": {
+      "ownKB": 139.4,
+      "externalKB": 0,
+      "requests": 3,
+      "readyMs": 1210,
+      "fcpMs": 1160,
+      "lcpMs": 1160,
+      "tbtMs": 69,
+      "cls": 0
+    }
+  },
+  "flutter_web_wasm": {
+    "escritorio": {
+      "ownKB": 1283.4,
+      "externalKB": 1759.2,
+      "requests": 20,
+      "readyMs": 764,
+      "fcpMs": 764,
+      "lcpMs": 0,
+      "tbtMs": 221,
+      "cls": 0
+    },
+    "telefono_cpu4x_4g": {
+      "ownKB": 1281.8,
+      "externalKB": 1479.6,
+      "requests": 16,
+      "readyMs": 14677,
+      "fcpMs": 14660,
+      "lcpMs": 0,
+      "tbtMs": 1167,
+      "cls": 0
+    }
+  },
+  "tamanos_build": {
+    "jaspr_MB": 1.9,
+    "flutter_web_wasm_MB": 45
+  }
+}

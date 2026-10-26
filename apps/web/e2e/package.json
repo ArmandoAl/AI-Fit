@@ -1,0 +1,7 @@
+{
+  "name": "aifit-web-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test --test-concurrency=1 aifit.e2e.mjs" },
+  "devDependencies": { "axe-core": "4.10.3", "playwright-core": "1.56.1" }
+}

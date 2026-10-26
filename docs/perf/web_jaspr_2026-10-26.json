@@ -1,0 +1,26 @@
+{
+  "app": "http://127.0.0.1:7724",
+  "runs": 5,
+  "chrome": "156.0.8078.47",
+  "nota": "Servidor simulado local: no incluye latencia de red ni de Supabase real.",
+  "profiles": {
+    "escritorio": {
+      "accesoYArmarioMs": 187,
+      "filtrarMs": 46,
+      "abrirFichaMs": 76,
+      "borrarMs": 78,
+      "inpMs": 24,
+      "tbtMs": 0,
+      "heapMB": 9.4
+    },
+    "telefono_cpu4x": {
+      "accesoYArmarioMs": 489,
+      "filtrarMs": 52,
+      "abrirFichaMs": 62,
+      "borrarMs": 143,
+      "inpMs": 32,
+      "tbtMs": 27,
+      "heapMB": 9.4
+    }
+  }
+}

@@ -1,0 +1,31 @@
+name: aifit_web
+description: "Interfaz Jaspr de AI-Fit (primera vertical: acceso, armario y perfil)."
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.2
+
+resolution: workspace
+
+dependencies:
+  aifit_core:
+    path: ../../packages/core
+  aifit_supabase_data:
+    path: ../../packages/supabase_data
+  bloc: ^9.2.0
+  jaspr: ^0.23.4
+  supabase: ^2.8.0
+  web: ^1.1.1
+
+dev_dependencies:
+  build_runner: ^2.10.0
+  build_web_compilers: 4.8.5
+  http: ^1.2.0
+  jaspr_builder: ^0.23.4
+  lints: ^5.0.0
+  test: ^1.31.1
+
+jaspr:
+  mode: client
+  port: 7702
