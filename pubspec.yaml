@@ -4,4 +4,5 @@ environment:
   sdk: ^3.9.2
 workspace:
   - packages/core
+  - packages/supabase_data
   - apps/mobile

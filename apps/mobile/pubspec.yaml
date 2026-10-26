@@ -32,6 +32,8 @@ resolution: workspace
 dependencies:
   aifit_core:
     path: ../../packages/core
+  aifit_supabase_data:
+    path: ../../packages/supabase_data
   bloc: ^9.2.0
   cached_network_image: ^3.4.1
   cupertino_icons: ^1.0.8

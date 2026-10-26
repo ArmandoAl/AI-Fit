@@ -1,0 +1,14 @@
+name: aifit_supabase_data
+description: Acceso a Supabase (armario y perfil) compartido por la app Flutter y la interfaz Jaspr. Dart puro sobre el paquete `supabase`; sin Flutter.
+publish_to: none
+environment:
+  sdk: ^3.9.2
+resolution: workspace
+dependencies:
+  aifit_core:
+    path: ../core
+  supabase: ^2.8.0
+dev_dependencies:
+  http: ^1.2.0
+  lints: ^5.0.0
+  test: ^1.31.1

@@ -1,3 +1,4 @@
+import 'package:aifit_supabase_data/aifit_supabase_data.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -21,42 +22,7 @@ class ProfileRepository {
   /// Get user profile data from Supabase
   Future<Map<String, dynamic>?> getUserProfile(String userId) async {
     try {
-      final profileRes = await _supabase
-          .from('profiles')
-          .select()
-          .eq('id', userId)
-          .maybeSingle();
-
-      if (profileRes == null) return null;
-
-      final photosRes = await _supabase
-          .from('user_photos')
-          .select()
-          .eq('user_id', userId);
-
-      final photosList = (photosRes as List? ?? []);
-      final bodyPhotos = photosList
-          .where((p) => p['kind'] == 'body')
-          .map((p) => p['storage_path'].toString())
-          .toList();
-      final facePhotos = photosList
-          .where((p) => p['kind'] == 'face')
-          .map((p) => p['storage_path'].toString())
-          .toList();
-
-      return {
-        'id': profileRes['id'],
-        'displayName': profileRes['display_name'],
-        'avatarUrl': profileRes['avatar_path'],
-        'preferences': profileRes['preferences'] ?? {},
-        'onboardingCompleted': profileRes['onboarding_completed'] ?? false,
-        'identityProfile': profileRes['identity_profile'],
-        'identityVersion': profileRes['identity_version'],
-        'identityCollageUrl': profileRes['identity_collage_path'],
-        'baseImageUrl': profileRes['base_image_path'],
-        'bodyPhotos': bodyPhotos,
-        'facePhotos': facePhotos,
-      };
+      return await SupabaseProfileStore(_supabase).fetch(userId);
     } catch (e) {
       debugPrint('❌ [ProfileRepository -> Supabase] Error getting profile: $e');
       return null;

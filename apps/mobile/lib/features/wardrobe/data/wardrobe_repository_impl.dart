@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:aifit_supabase_data/aifit_supabase_data.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -76,19 +77,7 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
       debugPrint(
         '📦 [WardrobeRepository -> Supabase] Loading items for user: $uid',
       );
-      final response = await _supabase
-          .from('wardrobe_items')
-          .select()
-          .eq('user_id', uid)
-          .order('created_at', ascending: false);
-
-      final items = (response as List)
-          .map(
-            (row) => WardrobeItem.fromSupabase(
-              Map<String, dynamic>.from(row as Map),
-            ),
-          )
-          .toList();
+      final items = await SupabaseWardrobeStore(_supabase).list();
 
       debugPrint(
         '✅ [WardrobeRepository -> Supabase] Loaded ${items.length} wardrobe items',
@@ -318,10 +307,7 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
     debugPrint('📝 Updating wardrobe item: ${item.id}');
 
     try {
-      await _supabase
-          .from('wardrobe_items')
-          .update(item.toSupabase(userId: uid))
-          .eq('id', item.id);
+      await SupabaseWardrobeStore(_supabase).update(item);
       debugPrint('✅ [WardrobeRepository -> Supabase] Item updated');
     } catch (e) {
       debugPrint('❌ [WardrobeRepository -> Supabase] Error updating item: $e');
@@ -335,18 +321,8 @@ class WardrobeRepositoryImpl implements WardrobeRepository {
     if (uid == null) throw Exception('User not logged in');
     if (ids.isEmpty) return;
     try {
-      // outfit_items uses ON DELETE RESTRICT, so remove this user's saved
-      // outfit references before deleting the wardrobe rows.
-      await _supabase.from('outfit_items').delete().inFilter('wardrobe_item_id', ids);
-      final deleted = await _supabase
-          .from('wardrobe_items')
-          .delete()
-          .eq('user_id', uid)
-          .inFilter('id', ids)
-          .select('id');
-      if ((deleted as List).length != ids.toSet().length) {
-        throw Exception('No se pudieron eliminar todas las prendas seleccionadas');
-      }
+      // Reglas de borrado (outfit_items primero, verificación de filas) compartidas con la web.
+      await SupabaseWardrobeStore(_supabase).delete(ids);
       debugPrint('✅ [WardrobeRepository -> Supabase] Deleted ${ids.length} items');
     } catch (e) {
       debugPrint('❌ [WardrobeRepository -> Supabase] Error deleting items: $e');
