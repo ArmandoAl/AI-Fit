@@ -70,3 +70,9 @@ Google (`https://<proyecto>.supabase.co/auth/v1/callback`) no cambia.
 no se mantiene Android en el servidor. El proyecto Android nunca se construyó con Flutter 3.47.1: pide Gradle ≥ 8.14 y AGP ≥ 8.11.1
 (tiene 8.12 / 8.9.1). Un intento de subir versiones quedó guardado como parche sin aplicar en `~/projects/.logs/aifit-android-wip.patch`
 (no verificado, no hay APK). Para probar en móvil, usar la web Jaspr (preview) o iOS desde la Mac.
+
+## Publicar para ver desde cualquier lugar (Firebase Hosting, canal de vista previa)
+`scripts/deploy_preview.sh [canal]` compila `apps/web` (con `env.json`) y lo sube a un **canal de vista previa** del proyecto `aifit-a7f6b`
+(URL temporal de 7 días, `noindex`; el sitio de producción —Flutter Web desde `apps/mobile`— no se toca). Configuración en `firebase.jaspr.json`.
+Requiere `firebase login --no-localhost` una vez. Cada URL nueva (`https://aifit-a7f6b--<canal>-<hash>.web.app`) debe añadirse en Supabase →
+Authentication → URL Configuration → Redirect URLs para que el acceso con Google funcione. El bundle incluye la llave *publishable* de Supabase (pública por diseño).
