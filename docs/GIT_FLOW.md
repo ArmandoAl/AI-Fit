@@ -36,6 +36,8 @@ git commit -m "feat: descripción concreta"
 
 La rama de investigación contiene documentación, sin cambios funcionales ni despliegues. La implementación posterior puede separarse en ramas para captura, compositor local y evaluación de modelos. Antes de cada cambio se debe revisar el estado de `develop`; no asumir que contiene trabajo todavía pendiente de integración.
 
+El laboratorio autorizado posteriormente se desarrolla en `feature/tryon-local-lab`, creada desde el commit de investigación `b38db37`. Contiene scripts aislados, pruebas y documentación bajo `labs/tryon`; no modifica el flujo de generación desplegado. Su guía de traslado a la Mac usa un bundle local para conservar los commits pendientes de integración.
+
 ## Reproducir la configuración local
 
 Estos valores describen la configuración aplicada. Un clon futuro debe crear o recuperar `develop` desde la referencia acordada antes de usarlos:

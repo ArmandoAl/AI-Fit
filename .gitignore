@@ -62,3 +62,10 @@ serviceAccountKey*.json
 node_modules/
 .migration_checkpoint.json
 *.migration_checkpoint.json
+
+# Local try-on lab: personal inputs, generated assets, tools and environments
+/labs/tryon/private/
+/labs/tryon/output/
+/labs/tryon/.cache/
+/labs/tryon/.venv/
+__pycache__/

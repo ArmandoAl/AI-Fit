@@ -74,6 +74,8 @@ DM-VTON publica un modelo ligero y reporta 40 FPS en una NVIDIA Tesla T4 y 37 MB
 
 Los autores publican un modelo de 415 millones de parámetros y una demostración de inferencia offline en móvil. Es una pista especialmente relevante para la intención del proyecto. [Página de los autores](https://zhenchenwan.github.io/Mobile-VTON/) y [artículo](https://arxiv.org/abs/2603.00947).
 
+La auditoría posterior del laboratorio encontró siete archivos de pesos públicos que suman aproximadamente 3.75 GB decimales para los componentes publicados. La cifra de parámetros del artículo no debe interpretarse como tamaño de descarga del pipeline completo. Los tamaños, revisiones y pruebas ejecutadas están en [los resultados del laboratorio](../labs/tryon/RESULTS.md).
+
 La entrega pública consultada usa Python, Accelerate, datos preprocesados y scripts de evaluación con múltiples procesos. El README enlaza pesos, pero no ofrece instrucciones de integración iOS/Core ML. Antes de seleccionarlo hay que comprobar acceso a los pesos completos, licencia de cada componente, preprocesamiento local y conversión de operaciones. [README oficial](https://github.com/tmllab/2026_CVPR_Mobile-VTON) y [script de inferencia](https://github.com/tmllab/2026_CVPR_Mobile-VTON/blob/main/inference.sh).
 
 ### FASHN VTON 1.5 y CatVTON

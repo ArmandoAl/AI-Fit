@@ -4,6 +4,8 @@
 
 Flujo de ramas: [Git Flow](docs/GIT_FLOW.md). Propuesta para reducir el costo del probador: [investigación de composición local y modelos especializados](docs/TRYON_LOCAL_FIRST_RESEARCH.md). El código actual selecciona Seedream por defecto; las referencias a Gemini como motor principal más abajo describen el flujo anterior.
 
+Laboratorio ejecutable: [composición local, recursos 3D y preparación para la Mac M4](labs/tryon/README.md).
+
 AIFit convierte el armario real de una persona en un **grafo semántico de prendas** y genera looks personalizados con try-on virtual. No recomienda catálogo: trabaja con lo que ya tienes.
 
 Este README documenta las **tecnologías**, cómo se **da contexto a los modelos** y se **comprimen las imágenes**, los **modelos de outfit**, y la **arquitectura / organización de carpetas**.
