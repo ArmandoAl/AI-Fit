@@ -1,6 +1,20 @@
 # Continuar el laboratorio en la MacBook Air M4
 
-Este prompt continúa el trabajo desde una copia del repositorio que contenga `labs/tryon`. Las ramas locales del servidor no están publicadas. Para trasladarlas sin modificar el remoto, el servidor prepara `labs/tryon/output/aifit-tryon-lab.bundle`, que contiene código e historial, excluyendo fotos, pesos y entornos ignorados.
+Este prompt continúa el trabajo desde la rama `feature/tryon-local-lab`, publicada en el repositorio remoto. Clonar esa rama para obtener el laboratorio y la investigación previa:
+
+```bash
+git clone --branch feature/tryon-local-lab https://github.com/ArmandoAl/AI-Fit.git ~/AI-Fit-tryon-lab
+```
+
+Si ya existe un checkout, comprobar que no tenga cambios pendientes antes de ejecutar:
+
+```bash
+git fetch origin
+git switch feature/tryon-local-lab
+git pull --ff-only
+```
+
+Como alternativa offline, el bundle local `labs/tryon/output/aifit-tryon-lab.bundle` contiene el estado inicial del laboratorio en `59dd4ac`, excluyendo fotos, pesos y entornos ignorados. La rama remota puede incluir actualizaciones posteriores.
 
 Desde la Mac conectada al servidor por SSH, copiar el bundle con el host que ya se use para `hpmeserver`. Por ejemplo, si el alias SSH `hpmeserver` está configurado:
 
